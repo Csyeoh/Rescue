@@ -1,71 +1,96 @@
-# 🚁 Rescue Swarm Simulation: First Responder of the Future
+# 🚁 Swarm Control Nexus: AI-Powered Disaster Recovery
 
-An autonomous, 2D Agentic AI simulation environment built for the "First Responder of the Future" hackathon. 
+**Swarm Control Nexus** is a decentralized search-and-rescue simulation designed for the *First Responder of the Future* hackathon. It utilizes **Agentic AI** to coordinate a swarm of drones through a high-stakes disaster zone.
 
-This project simulates a decentralized drone swarm navigating a post-disaster zone (earthquake/super typhoon) to locate hidden survivors. It enforces strict physical constraints (battery logistics, impassable debris) to test the Chain-of-Thought reasoning and resource management of an autonomous AI Commander.
+The system is built on a "strict environment" philosophy: the AI cannot cheat. It must manage real-time battery levels, navigate impassable earthquake debris, and use thermal scanning to locate survivors—all through a standardized Model Context Protocol (MCP) interface.
+
+
+
+---
 
 ## 🏗️ System Architecture
 
-This environment uses a decoupled, event-driven microservice architecture:
+The project follows a decoupled, event-driven microservice architecture to ensure maximum scalability and model-agnostic control:
 
-* **The Physics Engine (`simulation.py`):** Powered by the Python `mesa` library. Maintains a strict 20x20 grid, handles out-of-bounds checks, and calculates obstacle collisions.
-* **The Data Layer (`database.py`):** A local, serverless SQLite database (`swarm_state.db`). Acts as the single source of truth for drone coordinates, battery levels, survivor locations, and mission logs.
-* **The API Bridge (`api.py`):** A FastAPI server that continuously reads the SQLite database and broadcasts the world state via a RESTful JSON endpoint.
-* **The UI Dashboard (`rescue-ui/`):** A Next.js (React) frontend styled with Tailwind CSS. It polls the API to render a real-time, color-coded map and a scrolling hacker-style mission terminal.
-* **The Orchestrator (`main.py`):** A multi-process execution script that boots the backend API and frontend UI simultaneously.
+* **🌍 The Simulation (Mesa):** A Python-based physics engine enforcing a 20x20 grid with strict movement rules and obstacle collisions.
+* **🗄️ The World State (SQLite):** A serverless database acting as the "Single Source of Truth" for drone telemetry, survivor status, and mission logs.
+* **⚡ The Bridge (FastAPI):** A high-performance REST API that broadcasts the simulation state to external clients.
+* **💻 The Nexus Dashboard (Next.js):** A real-time React dashboard with a live-updating map and a scrolling "Mission Action Log" terminal.
+* **🔌 The Tool Layer (FastMCP):** A Model Context Protocol server that wraps the simulation logic into secure "tools" for an LLM to execute.
 
-## ✨ Core Features & Constraints
 
-To prevent the AI from "cheating," the environment enforces the following physical rules:
-* **Battery Logistics:** Every valid move costs `5%` battery. The engine rejects movement commands if the battery is critically low.
-* **Base Camp Recharging:** Drones routed to coordinate `(0, 0)` instantly recharge their battery to `100%`.
-* **Earthquake Debris:** Impassable structural debris is scattered randomly across the grid. Attempting to enter a debris cell returns a failed status, forcing the AI to pathfind.
-* **Thermal Scanning:** Real-world thermal mechanics are simulated. The system checks drone coordinates against hidden survivor coordinates to mark them as discovered.
 
-## 🛠️ Prerequisites
+---
 
+## ⚙️ Environment Rules & Constraints
+
+To test the **Chain-of-Thought (CoT)** capabilities of the AI Commander, the environment enforces the following logic:
+
+| Feature | Logic |
+| :--- | :--- |
+| **Battery Drain** | Every movement costs **5% battery**. |
+| **Emergency Recharge** | Drones must be manually routed to **Base Camp (0,0)** to restore 100% battery. |
+| **Debris Obstruction** | Randomly generated debris cells are impassable; the AI must pathfind around them. |
+| **Thermal Signature** | Survivors are invisible to the map until a drone performs a successful `thermal_scan`. |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
 * **Python 3.10+**
-* **Node.js 18+** (for the Next.js frontend)
+* **Node.js 18+**
 
-## 🚀 Installation & Quick Start
-
-**1. Clone the repository and navigate to the backend folder:**
+### 1. Setup Environment
 ```bash
+# Clone the repo
+git clone [https://github.com/Csyeoh/Rescue.git](https://github.com/Csyeoh/Rescue.git)
 cd rescue_swarm_sim
-```
 
-**2. Set up the Python virtual environment:**
-```bash
+# Create and activate virtual environment
 python -m venv venv
-# On Windows:
-venv\Scripts\activate
-# On Mac/Linux:
+
+# Windows:
+venv\Scripts\activate  
+
+# Mac/Linux:
 source venv/bin/activate
+
+# Install Backend Dependencies
+pip install mesa fastapi uvicorn fastmcp
 ```
 
-**3. Install backend dependencies:**
-```bash
-pip install mesa fastapi uvicorn
-```
-
-**4. Install frontend dependencies:**
+### 2. Setup Dashboard
 ```bash
 cd rescue-ui
 npm install
 cd ..
 ```
 
-**5. Launch the Swarm Control Nexus:**
+### 3. Launch System
+Run the master orchestrator to boot the API, the Database, and the UI simultaneously:
 ```bash
 python main.py
 ```
-*The master script will automatically boot the FastAPI backend on `localhost:8000` and the Next.js UI on `localhost:3000`.*
+* **Access the Dashboard:** `http://localhost:3000`
+* **Access the API:** `http://localhost:8000`
 
-## 📜 "The Contract" (Simulation API)
+---
 
-For the **MCP Engineer**, the following Python functions are fully tested and ready to be exposed as tools to the AI Agent. *Do not hardcode movement; all actions must route through these tools.*
+## 📜 The "Contract" (MCP Tool Definitions)
 
-* `discover_drones() -> list[str]`: Returns an array of active drone IDs.
-* `get_battery_status(drone_id: str) -> int`: Returns current battery from 0 to 100.
-* `thermal_scan(drone_id: str) -> bool`: Checks the drone's coordinates against the hidden survivor table.
-* `move_to(drone_id: str, x: int, y: int) -> dict`: Updates the grid, drains battery, logs the action, and syncs to SQLite. Returns a dictionary with the move's success or failure reason.
+For the **AI Commander** to interact with the world, the following tools are exposed via `mcp_server.py`:
+
+* **`discover_drones`**: Returns a list of active drones ready for deployment.
+* **`get_battery_status`**: Queries the live battery percentage of a specific unit.
+* **`move_drone(x, y)`**: Attempts to move a drone. Returns `Success` or `Failed` (if blocked by debris or out of power).
+* **`thermal_scan`**: Triggers a heat-signature check at the drone's current coordinates.
+
+---
+
+## 👥 Team Roles
+
+* **Simulation Architect:** (Tan Jing En) - Physics engine, SQLite schema, and FastAPI bridge.
+* **MCP Engineer:** (Person 2) - Tool wrapping and FastMCP server implementation.
+* **AI Commander:** (Person 3) - System prompting, Chain-of-Thought logic, and resource management.
+* **Orchestrator:** (Person 4) - Deployment, `main.py` lifecycle management, and UI polish.
