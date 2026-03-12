@@ -8,7 +8,7 @@ def start_services():
     processes = []
 
     try:
-        # 1. Start the FastAPI Backend
+        # 1. Start the FastAPI Backend (Simulation & Database API)
         print("--> Starting Python Simulation Backend (Port 8000)...")
         backend_process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "api:app", "--port", "8000"],
@@ -19,7 +19,7 @@ def start_services():
         # Give the backend a quick second to spin up before the frontend hits it
         time.sleep(2)
 
-        # 2. Start the Next.js Frontend
+        # 2. Start the Next.js Frontend (Live React Map)
         print("--> Starting Next.js Live Map (Port 3000)...")
         npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
         # Look one directory UP from the current folder, then find rescue-ui
@@ -28,13 +28,16 @@ def start_services():
         frontend_process = subprocess.Popen(
             [npm_cmd, "run", "dev"],
             cwd=ui_path,
-            shell=(os.name == "nt")  # <-- ADD THIS LINE FOR WINDOWS!
+            shell=(os.name == "nt")  # Required for Windows npm execution
         )
         processes.append(frontend_process)
 
-        # 3. Placeholder for the AI Agent (Role 3)
-        # When Person 3 finishes the AI script, you will uncomment this section!
-        # print("--> Awakening AI Commander...")
+        # ==========================================
+        # 3. AI SWARM COMMANDER (Ready for next step!)
+        # ==========================================
+        # Once we build agent.py, uncomment these three lines to boot the AI automatically!
+        
+        # print("--> Awakening AI Swarm Commander...")
         # ai_process = subprocess.Popen([sys.executable, "agent.py"], cwd=os.getcwd())
         # processes.append(ai_process)
 

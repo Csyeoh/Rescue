@@ -1,0 +1,12 @@
+# Python
+venv/
+__pycache__/
+*.db
+.env
+
+# Next.js / Node
+node_modules/
+.next/
+out/
+build/
+.DS_Store
