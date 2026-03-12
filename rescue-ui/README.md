@@ -8,7 +8,7 @@ Google Gemini API Key
 Bash
 # Clone the repository
 git clone https://github.com/Csyeoh/Rescue.git
-cd Rescue/rescue_swarm_sim
+cd rescue_swarm_sim
 # Create the virtual environment
 python -m venv venv
 # Activate the virtual environment (Windows):
