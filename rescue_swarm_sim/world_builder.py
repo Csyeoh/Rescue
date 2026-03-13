@@ -20,7 +20,7 @@ def generate_disaster_blueprint(scenario: str, num_survivors: int, flood_type: s
     
     REAL-WORLD LOGIC RULES:
     1. Base Camp: Grid (9,9) MUST be completely empty. Do not place anything here.
-    2. Geography: Define 1 to 3 'hills' (peak_altitude 6.0-10.0, spread 1.5-3.0). Define 1 to 3 'city_centers'. Space your 'city_centers' away from your 'hills'.
+    2. Geography: Define 1 to 3 'hills' (peak_altitude 20.0-80.0, spread 1.5-3.0). Define 1 to 3 'city_centers'. Space your 'city_centers' away from your 'hills'.
     3. Flood Evacuation (Survivors): You MUST place exactly {num_survivors} survivors. 
        - Behavior A (Trapped): Place a cluster within a 1-grid radius of a 'city_center'.
        - Behavior B (Evacuees): Place the remaining cluster within a 1-grid radius of a 'hill' peak.

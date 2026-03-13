@@ -102,15 +102,16 @@ class DisasterZoneModel(Model):
         for x in range(self.width):
             for y in range(self.height):
                 
+                # Base Camp is now an indestructible 150m high platform
                 if x == 9 and y == 9:
-                    altitude = 10.0
+                    altitude = 150.0
                     is_ob = False
                     t_type = "terrain"
                 else:
                     altitude = 1.0 
                     for hill in hills:
                         hx, hy = hill.get("x", 10), hill.get("y", 10)
-                        h_max = hill.get("peak_altitude", 8.0)
+                        h_max = hill.get("peak_altitude", 40.0) # Hills are much taller
                         h_spread = hill.get("spread", 1.5)
                         
                         dist = math.sqrt((x - hx)**2 + (y - hy)**2)
@@ -119,23 +120,23 @@ class DisasterZoneModel(Model):
                             altitude = hill_height
                             
                     altitude += random.uniform(-0.5, 0.5)
-                    altitude = max(1.0, min(10.0, altitude)) 
+                    altitude = max(1.0, altitude) 
                     
                     closest_city = min([math.sqrt((x - cx)**2 + (y - cy)**2) for cx, cy in city_centers]) if city_centers else 10
                     
                     t_type = "terrain"
-                    if closest_city < 5.0 and altitude < 7.0:
+                    if closest_city < 5.0 and altitude < 20.0:
                         if random.random() < 0.75:
                             t_type = "building"
-                            altitude += random.uniform(1.0, 3.0) 
+                            # Skyscrapers in the city! (20m to 80m tall)
+                            altitude += random.uniform(20.0, 80.0) 
                     else:
-                        if random.random() < 0.05 and altitude < 8.0:
+                        if random.random() < 0.05 and altitude < 30.0:
                             t_type = "building"
-                            altitude += random.uniform(1.0, 2.0)
+                            # Suburban/Rural buildings (5m to 20m tall)
+                            altitude += random.uniform(5.0, 20.0)
 
                     is_ob = random.random() < obstacle_prob 
-
-                altitude = min(10.0, altitude)
 
                 cell = TerrainAgent(f"terrain_{terrain_id}", self, altitude, is_ob, t_type)
                 self.grid.place_agent(cell, (x, y))
@@ -234,7 +235,10 @@ class DisasterZoneModel(Model):
 
         # 2. NORMAL PHYSICS TICK (Only runs if mission is NOT complete)
         self.tick_count += 1
-        self.global_water_level += self.water_speed
+        
+        # NEW: The water only physically rises once every 5 seconds
+        if self.tick_count % 5 == 0:
+            self.global_water_level += self.water_speed
         
         # EVERY 10 SECONDS: Proportional weather shift!
         if self.tick_count % 10 == 0:

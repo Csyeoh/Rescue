@@ -108,7 +108,8 @@ export default function Dashboard() {
             isObstacleVisible = true;
             bgColor = "black";
         } else {
-            const opacity = Math.min(1.0, 0.2 + (cellTerrain.altitude / 10) * 0.8);
+            // UPDATED: Divide by 100.0 to account for massive 80m+ skyscrapers
+            const opacity = Math.min(1.0, 0.2 + (cellTerrain.altitude / 100.0) * 0.8);
             bgColor = cellTerrain.terrain_type === 'building' 
                 ? `rgba(220, 38, 38, ${opacity})`
                 : `rgba(22, 163, 74, ${opacity})`;
@@ -128,8 +129,9 @@ export default function Dashboard() {
       >
         {/* Layer 1: Water (Calculated dynamically on the UI side!) */}
         {cellTerrain && environment?.global_water_level > cellTerrain.altitude && !isObstacleVisible && (
+          // UPDATED: Water scales opacity up to 20 meters deep for visual effect
           <div className="absolute inset-0 bg-cyan-600 pointer-events-none" 
-               style={{ opacity: 0.3 + (Math.min(environment.global_water_level - cellTerrain.altitude, 5) / 5) * 0.7 }} />
+               style={{ opacity: 0.3 + (Math.min(environment.global_water_level - cellTerrain.altitude, 20) / 20) * 0.7 }} />
         )}
         {isObstacleVisible && <div className="absolute inset-0 border border-gray-600 shadow-inner z-10" />}
         {isBaseCamp && <div className="absolute inset-0 bg-green-500/40 animate-pulse z-20 shadow-[0_0_15px_rgba(34,197,94,0.8)]" />}
@@ -318,7 +320,8 @@ export default function Dashboard() {
                   <div className="h-4 w-32 rounded bg-gradient-to-r from-red-600/20 to-red-600 border border-red-900"></div>
                   <div className="flex justify-between text-[10px] text-gray-500 mt-1.5 font-mono">
                     <span>1m</span>
-                    <span>10m</span>
+                    {/* UPDATED TO 100m+ */}
+                    <span>100m+</span>
                   </div>
                 </div>
                 <div>
@@ -326,7 +329,8 @@ export default function Dashboard() {
                   <div className="h-4 w-32 rounded bg-gradient-to-r from-green-600/20 to-green-600 border border-green-900"></div>
                   <div className="flex justify-between text-[10px] text-gray-500 mt-1.5 font-mono">
                     <span>1m</span>
-                    <span>10m</span>
+                    {/* UPDATED TO 100m+ */}
+                    <span>100m+</span>
                   </div>
                 </div>
               </div>

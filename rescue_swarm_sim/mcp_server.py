@@ -2,6 +2,7 @@ from fastmcp import FastMCP
 import sqlite3
 import time
 import database
+import json
 
 # Initialize the MCP Server
 mcp = FastMCP("RescueSwarm")
@@ -57,7 +58,7 @@ def move_drone(drone_id: str, x: int, y: int) -> str:
     """
     Moves a rescue drone to specific (x, y) coordinates on the grid.
     Automatically drains battery by 2% per move, or recharges to 100% if moved to Base Camp (9,9).
-    If a survivor is in an adjacent grid (Up, Down, Left, Right), it will trigger a Thermal Aura sensor alert.
+    Includes Passive Sensors: Scans adjacent grids for obstacles and thermal auras upon arrival.
     """
     if not (0 <= x < 20 and 0 <= y < 20):
         return "Failure: Coordinates out of bounds. Grid is strictly 0 to 19."
@@ -78,12 +79,13 @@ def move_drone(drone_id: str, x: int, y: int) -> str:
         conn.close()
         return f"Failure: {drone_id} battery exhausted. Drone is grounded."
 
-    # 2. Check for physical obstacles
+    # 2. Check for physical obstacles at the TARGET destination
     try:
         cursor.execute("SELECT is_obstacle FROM grid WHERE x=? AND y=?", (x, y))
         grid_data = cursor.fetchone()
         
         if grid_data and grid_data[0] == 1:
+            # Map the obstacle since we bumped into it
             cursor.execute("UPDATE grid SET obstacle_discovered=1 WHERE x=? AND y=?", (x, y))
             database.log_action(drone_id, f"CRITICAL: Flight path to ({x}, {y}) blocked by physical obstacle!")
             conn.commit()
@@ -96,34 +98,49 @@ def move_drone(drone_id: str, x: int, y: int) -> str:
     new_battery = 100 if (x == 9 and y == 9) else battery - 2
     cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (x, y, new_battery, drone_id))
 
-    # 4. SENSOR CHECK: Is there a Thermal Aura nearby?
-    # We check all undiscovered survivors to see if they are exactly 1 tile away (Manhattan distance of 1)
-    cursor.execute("SELECT x, y FROM survivors WHERE is_discovered=0")
-    undiscovered = cursor.fetchall()
+    # 4. PASSIVE SENSORS: Check the 4 adjacent grids (Up, Down, Left, Right)
+    adjacent_coords = [(x, y-1), (x, y+1), (x-1, y), (x+1, y)]
     
-    aura_detected = False
-    for sx, sy in undiscovered:
-        if abs(sx - x) + abs(sy - y) == 1:
-            aura_detected = True
-            break
+    # --- SENSOR A: Proximity Radar (Obstacles) ---
+    detected_obstacles = []
+    for ax, ay in adjacent_coords:
+        cursor.execute("SELECT is_obstacle, obstacle_discovered FROM grid WHERE x = ? AND y = ?", (ax, ay))
+        row = cursor.fetchone()
+        # If it is an obstacle and hasn't been mapped yet
+        if row and row[0] == 1 and row[1] == 0: 
+            detected_obstacles.append((ax, ay))
+            # Instantly map it so the UI draws it and the AI knows it's there!
+            cursor.execute("UPDATE grid SET obstacle_discovered = 1 WHERE x = ? AND y = ?", (ax, ay))
+
+    # --- SENSOR B: Thermal Aura (Survivors) ---
+    thermal_alert = False
+    for ax, ay in adjacent_coords:
+        cursor.execute("SELECT is_discovered FROM survivors WHERE x = ? AND y = ?", (ax, ay))
+        s_row = cursor.fetchone()
+        # If there is a survivor and they haven't been rescued yet
+        if s_row and s_row[0] == 0:
+            thermal_alert = True
+            break # One ping is enough for the aura
 
     # 5. Log the action to the UI console
     log_msg = "Returned to Base Camp. Recharging to 100%." if (x == 9 and y == 9) else f"Moved to sector ({x}, {y})."
-    
-    # We don't log the aura to the UI (to preserve the fog of war for the humans),
-    # but the AI will see it in the return message below!
     database.log_action(drone_id, log_msg)
 
     conn.commit()
     conn.close()
     
     # 6. Simulate the physical flight time! 
-    # The AI is forced to wait 1.5 seconds before it receives the sensor feedback.
-    time.sleep(1.5)
+    # The AI is forced to wait 1.0 second before it receives the sensor feedback.
+    time.sleep(1.0)
     
-    # 7. Return the sensor data to the AI Brain
+    # 7. Build the Sensor Report for the AI Brain
     response_msg = f"Success: {drone_id} moved to ({x}, {y}). Battery now at {new_battery}%."
-    if aura_detected:
+    
+    if detected_obstacles:
+        obs_str = ", ".join([f"({ox},{oy})" for ox, oy in detected_obstacles])
+        response_msg += f" [PROXIMITY WARNING: New obstacles mapped at {obs_str}.]"
+        
+    if thermal_alert:
         response_msg += " [SENSOR ALERT: Faint thermal aura detected in an adjacent sector (Up, Down, Left, or Right)! Perform thermal scans immediately.]"
         
     return response_msg
@@ -195,7 +212,6 @@ def get_known_map() -> str:
     # To save AI token context limits, we can just pass the raw list
     map_list = [{"x": row[0], "y": row[1], "alt": round(row[2], 1), "type": row[3]} for row in grid_data]
     
-    import json
     map_details += json.dumps(map_list)
     
     return map_details
