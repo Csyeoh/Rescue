@@ -1,13 +1,41 @@
 import sqlite3
 import os
+import time
 
 DB_NAME = "swarm_state.db"
+DB_TIMEOUT_S = 30.0
+BUSY_TIMEOUT_MS = 30000
+MAX_RETRIES = 8
+
+
+def _connect():
+    conn = sqlite3.connect(DB_NAME, timeout=DB_TIMEOUT_S)
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+    except Exception:
+        pass
+    return conn
+
+
+def _with_retry(op):
+    last_error = None
+    for i in range(MAX_RETRIES):
+        try:
+            return op()
+        except sqlite3.OperationalError as e:
+            if "locked" not in str(e).lower():
+                raise
+            last_error = e
+            time.sleep(0.05 * (2**i))
+    if last_error:
+        raise last_error
 
 def init_db():
     if os.path.exists(DB_NAME):
         os.remove(DB_NAME)
         
-    conn = sqlite3.connect(DB_NAME)
+    conn = _connect()
     cursor = conn.cursor()
     
     # 1. DRONES TABLE (Upgraded with active and health status)
@@ -66,36 +94,52 @@ def init_db():
     conn.close()
 
 def sync_terrain(terrain_data):
-    conn = sqlite3.connect(DB_NAME, timeout=10.0)
-    cursor = conn.cursor()
-    cursor.executemany('''
-        INSERT OR REPLACE INTO grid (x, y, altitude, is_obstacle, terrain_type, obstacle_discovered)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', terrain_data)
-    conn.commit()
-    conn.close()
+    def op():
+        conn = _connect()
+        try:
+            cursor = conn.cursor()
+            cursor.executemany('''
+                INSERT OR REPLACE INTO grid (x, y, altitude, is_obstacle, terrain_type, obstacle_discovered)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', terrain_data)
+            conn.commit()
+        finally:
+            conn.close()
+    return _with_retry(op)
 
 def update_environment(water_level, water_speed):
     """Saves the global water physics to the database."""
-    conn = sqlite3.connect(DB_NAME, timeout=10.0)
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT OR REPLACE INTO environment (id, global_water_level, water_speed)
-        VALUES (1, ?, ?)
-    ''', (water_level, water_speed))
-    conn.commit()
-    conn.close()
+    def op():
+        conn = _connect()
+        try:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO environment (id, global_water_level, water_speed)
+                VALUES (1, ?, ?)
+            ''', (water_level, water_speed))
+            conn.commit()
+        finally:
+            conn.close()
+    return _with_retry(op)
 
 def update_drone_state(drone_id, x, y, battery):
-    conn = sqlite3.connect(DB_NAME, timeout=10.0)
-    cursor = conn.cursor()
-    cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (x, y, battery, drone_id))
-    conn.commit()
-    conn.close()
+    def op():
+        conn = _connect()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (x, y, battery, drone_id))
+            conn.commit()
+        finally:
+            conn.close()
+    return _with_retry(op)
 
 def log_action(drone_id, message):
-    conn = sqlite3.connect(DB_NAME, timeout=10.0)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, message))
-    conn.commit()
-    conn.close()
+    def op():
+        conn = _connect()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, message))
+            conn.commit()
+        finally:
+            conn.close()
+    return _with_retry(op)
