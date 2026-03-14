@@ -1,11 +1,16 @@
 import sqlite3
 import os
 import time
+import threading
 
 DB_NAME = "swarm_state.db"
 DB_TIMEOUT_S = 30.0
 BUSY_TIMEOUT_MS = 30000
 MAX_RETRIES = 8
+
+# Module-level write lock: autopilot_tick and assign_drone_zone must both hold
+# this before writing so they never contend for the SQLite writer slot.
+DB_WRITE_LOCK = threading.Lock()
 
 
 def _connect():
@@ -33,7 +38,21 @@ def _with_retry(op):
 
 def init_db():
     if os.path.exists(DB_NAME):
-        os.remove(DB_NAME)
+        # On Windows, the file may still be locked by a dying process.
+        # Retry a few times before giving up.
+        for attempt in range(5):
+            try:
+                os.remove(DB_NAME)
+                break
+            except PermissionError:
+                if attempt < 4:
+                    time.sleep(0.5)
+                else:
+                    # Last resort: rename it so we can still create a fresh one
+                    try:
+                        os.rename(DB_NAME, DB_NAME + ".bak")
+                    except Exception:
+                        pass  # If rename also fails, just proceed — SQLite will overwrite
         
     conn = _connect()
     cursor = conn.cursor()
@@ -50,15 +69,26 @@ def init_db():
         )
     ''')
     
-    # 2. GRID TABLE (Removed redundant water_level)
+    # 2. QUESTION PLANE: Ground Truth Physics Engine (Simulation ONLY)
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS grid (
+        CREATE TABLE IF NOT EXISTS question_plane (
             x INTEGER,
             y INTEGER,
             altitude REAL,
             is_obstacle INTEGER,
             terrain_type TEXT,
-            obstacle_discovered INTEGER,
+            PRIMARY KEY (x, y)
+        )
+    ''')
+    
+    # 2.1 ANSWER PLANE: The Discovered Map (AI & UI ONLY)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS answer_plane (
+            x INTEGER,
+            y INTEGER,
+            altitude REAL,
+            terrain_type TEXT,
+            obstacle_discovered INTEGER DEFAULT 0,
             PRIMARY KEY (x, y)
         )
     ''')
@@ -90,18 +120,70 @@ def init_db():
         )
     ''')
     
+    # NEW table for bounding box assignments
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS drone_zones (
+            drone_id TEXT PRIMARY KEY,
+            x_min INTEGER,
+            x_max INTEGER,
+            y_min INTEGER,
+            y_max INTEGER,
+            is_complete INTEGER DEFAULT 0
+        )
+    ''')
+    
+    # NEW table for sequential waypoint routing
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS drone_waypoints (
+            drone_id TEXT,
+            seq INTEGER,
+            x INTEGER,
+            y INTEGER,
+            is_done INTEGER DEFAULT 0,
+            PRIMARY KEY (drone_id, seq)
+        )
+    ''')
+    
+    # NEW table for storing BFS zone weights statically
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cell_weights (
+            x INTEGER,
+            y INTEGER,
+            weight INTEGER,
+            PRIMARY KEY (x, y)
+        )
+    ''')
+    
     conn.commit()
     conn.close()
 
 def sync_terrain(terrain_data):
+    """
+    Called by the simulation at spawn.
+    terrain_data format: (x, y, altitude, is_obstacle, terrain_type, obstacle_discovered)
+    """
     def op():
         conn = _connect()
         try:
             cursor = conn.cursor()
+            
+            # Extract just what is needed for the two planes
+            q_plane_data = [(r[0], r[1], r[2], r[3], r[4]) for r in terrain_data] 
+            a_plane_data = [(r[0], r[1], r[2], r[4], r[5]) for r in terrain_data]
+            
+            # Ground truth gets EVERYTHING
             cursor.executemany('''
-                INSERT OR REPLACE INTO grid (x, y, altitude, is_obstacle, terrain_type, obstacle_discovered)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', terrain_data)
+                INSERT OR REPLACE INTO question_plane (x, y, altitude, is_obstacle, terrain_type)
+                VALUES (?, ?, ?, ?, ?)
+            ''', q_plane_data)
+            
+            # Discovered map ONLY gets altitude and type (is_obstacle is stripped out!)
+            # Once seeded, the simulation NEVER updates this table again. Only MCP sensors update it.
+            cursor.executemany('''
+                INSERT OR REPLACE INTO answer_plane (x, y, altitude, terrain_type, obstacle_discovered)
+                VALUES (?, ?, ?, ?, ?)
+            ''', a_plane_data)
+            
             conn.commit()
         finally:
             conn.close()

@@ -1,8 +1,6 @@
-import heapq
 import json
 import sqlite3
-from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict
 
 import database
 import mcp_server
@@ -12,214 +10,128 @@ try:
 except Exception:  # pragma: no cover
     crewai_tool = None
 
-GRID_WIDTH = 20
-GRID_HEIGHT = 20
-BASE_CAMP_X = 9
-BASE_CAMP_Y = 9
+# We no longer need A* or full grids. The AI purely works on high-level zones.
 
+def get_terrain_map() -> str:
+    """Returns the known map (altitude, terrain type) and water level without obstacles."""
+    return mcp_server.get_known_map()
 
-def read_world_state() -> Dict[str, Any]:
-    conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+def get_drone_status() -> Dict[str, Any]:
+    """Returns the active drones, their batteries, and their CURRENT zone assignments."""
+    conn = database._connect()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT x, y, altitude, is_obstacle FROM grid")
-    grid_rows = cursor.fetchall()
-    grid = [
-        {"x": int(x), "y": int(y), "altitude": float(alt), "is_obstacle": bool(is_ob)}
-        for (x, y, alt, is_ob) in grid_rows
-    ]
-
-    cursor.execute("SELECT global_water_level, water_speed FROM environment WHERE id=1")
-    env_row = cursor.fetchone()
-    environment = {
-        "global_water_level": float(env_row[0]) if env_row else 0.0,
-        "water_speed": float(env_row[1]) if env_row else 0.0,
-    }
-
-    cursor.execute("SELECT drone_id, x, y, battery, is_active, health_status FROM drones WHERE is_active=1")
+    cursor.execute("SELECT drone_id, x, y, battery FROM drones WHERE is_active=1")
     drones_rows = cursor.fetchall()
-    drones = [
-        {
-            "id": drone_id,
-            "x": int(x),
-            "y": int(y),
-            "battery": int(battery),
-            "is_active": int(is_active),
-            "health_status": health_status,
+
+    cursor.execute("SELECT drone_id, x_min, x_max, y_min, y_max, is_complete FROM drone_zones")
+    zones = {row[0]: {"x_min": row[1], "x_max": row[2], "y_min": row[3], "y_max": row[4], "is_complete": bool(row[5])} for row in cursor.fetchall()}
+
+    drones = []
+    for (d_id, x, y, bat) in drones_rows:
+        drone_data = {
+            "id": d_id,
+            "x": x,
+            "y": y,
+            "battery": bat,
+            "zone_assignment": zones.get(d_id, "UNASSIGNED")
         }
-        for (drone_id, x, y, battery, is_active, health_status) in drones_rows
-    ]
+        drones.append(drone_data)
 
     conn.close()
-    return {"grid": grid, "environment": environment, "drones": drones}
+    return {"drones": drones}
 
-
-def _read_obstacle_set(conn: sqlite3.Connection) -> set[Tuple[int, int]]:
+def get_idle_drones() -> list[str]:
+    """Returns a list of drone IDs that have no remaining unvisited waypoints."""
+    conn = database._connect()
     cursor = conn.cursor()
-    cursor.execute("SELECT x, y FROM grid WHERE is_obstacle=1")
-    return {(int(x), int(y)) for (x, y) in cursor.fetchall()}
-
-
-def _in_bounds(x: int, y: int) -> bool:
-    return 0 <= x < GRID_WIDTH and 0 <= y < GRID_HEIGHT
-
-
-def _neighbors(x: int, y: int) -> Iterable[Tuple[int, int]]:
-    yield x + 1, y
-    yield x - 1, y
-    yield x, y + 1
-    yield x, y - 1
-
-
-def _heuristic(ax: int, ay: int, bx: int, by: int) -> int:
-    return abs(ax - bx) + abs(ay - by)
-
-
-@dataclass(frozen=True)
-class PathResult:
-    path: List[Tuple[int, int]]
-    steps: int
-
-
-def _a_star(
-    obstacles: set[Tuple[int, int]],
-    start: Tuple[int, int],
-    goal: Tuple[int, int],
-) -> Optional[PathResult]:
-    if start == goal:
-        return PathResult(path=[], steps=0)
-
-    if goal in obstacles:
-        return None
-
-    open_heap: List[Tuple[int, int, Tuple[int, int]]] = []
-    heapq.heappush(open_heap, (_heuristic(*start, *goal), 0, start))
-
-    came_from: Dict[Tuple[int, int], Tuple[int, int]] = {}
-    g_score: Dict[Tuple[int, int], int] = {start: 0}
-
-    visited: set[Tuple[int, int]] = set()
-
-    while open_heap:
-        _, current_g, current = heapq.heappop(open_heap)
-        if current in visited:
-            continue
-        visited.add(current)
-
-        if current == goal:
-            rev: List[Tuple[int, int]] = []
-            node = goal
-            while node != start:
-                rev.append(node)
-                node = came_from[node]
-            rev.reverse()
-            return PathResult(path=rev, steps=len(rev))
-
-        cx, cy = current
-        for nx, ny in _neighbors(cx, cy):
-            if not _in_bounds(nx, ny):
-                continue
-            neighbor = (nx, ny)
-            if neighbor in obstacles:
-                continue
-
-            tentative_g = current_g + 1
-            prev_g = g_score.get(neighbor)
-            if prev_g is not None and tentative_g >= prev_g:
-                continue
-
-            came_from[neighbor] = current
-            g_score[neighbor] = tentative_g
-            f = tentative_g + _heuristic(nx, ny, *goal)
-            heapq.heappush(open_heap, (f, tentative_g, neighbor))
-
-    return None
-
-
-def calculate_path_and_battery(
-    start_x: int,
-    start_y: int,
-    target_x: int,
-    target_y: int,
-) -> Dict[str, Any]:
-    start = (int(start_x), int(start_y))
-    target = (int(target_x), int(target_y))
-    base = (BASE_CAMP_X, BASE_CAMP_Y)
-
-    if not _in_bounds(*start) or not _in_bounds(*target):
-        return {"ok": False, "error": "Coordinates out of bounds.", "path": [], "battery_required": None}
-
-    conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
-    obstacles = _read_obstacle_set(conn)
+    cursor.execute("SELECT drone_id FROM drones WHERE is_active=1")
+    all_drones = [r[0] for r in cursor.fetchall()]
+    
+    idle = []
+    for d in all_drones:
+        cursor.execute("SELECT COUNT(*) FROM drone_waypoints WHERE drone_id=? AND is_done=0", (d,))
+        count = cursor.fetchone()[0]
+        if count == 0:
+            idle.append(d)
     conn.close()
+    return idle
 
-    to_target = _a_star(obstacles, start, target)
-    if to_target is None:
-        return {"ok": False, "error": "No valid path to target (blocked).", "path": [], "battery_required": None}
+def assign_waypoints(drone_id: str, waypoints: list[tuple[int, int]]) -> str:
+    """Assigns an ordered list of (x,y) waypoints to a drone."""
 
-    back_to_base = _a_star(obstacles, target, base)
-    if back_to_base is None:
-        return {"ok": False, "error": "No valid return path to Base Camp (blocked).", "path": [], "battery_required": None}
+    def _do_write():
+        with database.DB_WRITE_LOCK:
+            conn = database._connect()
+            cursor = conn.cursor()
 
-    steps_total = to_target.steps + back_to_base.steps
-    battery_required = steps_total * 2
+            cursor.execute("SELECT drone_id FROM drones WHERE drone_id=?", (drone_id,))
+            row = cursor.fetchone()
+            if not row:
+                conn.close()
+                return f"Error: Drone {drone_id} does not exist."
 
-    return {
-        "ok": True,
-        "path": [{"x": x, "y": y} for (x, y) in to_target.path],
-        "steps_to_target": to_target.steps,
-        "steps_to_base": back_to_base.steps,
-        "battery_required": battery_required,
-        "base_camp": {"x": BASE_CAMP_X, "y": BASE_CAMP_Y},
-    }
+            # Erase old uncompleted waypoints for this drone
+            cursor.execute("DELETE FROM drone_waypoints WHERE drone_id=?", (drone_id,))
 
+            # Insert new sequential list
+            records = [(drone_id, seq, x, y, 0) for seq, (x, y) in enumerate(waypoints)]
+            cursor.executemany('''
+                INSERT INTO drone_waypoints (drone_id, seq, x, y, is_done)
+                VALUES (?, ?, ?, ?, ?)
+            ''', records)
 
-def execute_drone_move(drone_id: str, x: int, y: int) -> Dict[str, Any]:
-    msg = mcp_server.move_drone(drone_id, int(x), int(y))
-    aura_detected = "Faint thermal aura detected" in msg
-    success = msg.startswith("Success:")
+            # Update UI bounding box for the new territory
+            if waypoints:
+                x_min = min(x for x, y in waypoints)
+                x_max = max(x for x, y in waypoints)
+                y_min = min(y for x, y in waypoints)
+                y_max = max(y for x, y in waypoints)
+                
+                cursor.execute('''
+                    INSERT OR REPLACE INTO drone_zones (drone_id, x_min, x_max, y_min, y_max, is_complete)
+                    VALUES (?, ?, ?, ?, ?, 0)
+                ''', (drone_id, x_min, x_max, y_min, y_max))
 
-    new_battery: Optional[int] = None
-    if "Battery now at" in msg:
-        try:
-            tail = msg.split("Battery now at", 1)[1].strip()
-            pct = tail.split("%", 1)[0].strip()
-            new_battery = int(pct)
-        except Exception:
-            new_battery = None
+            # Log inline
+            cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)",
+                           (drone_id, f"COMMAND: Received {len(waypoints)} new waypoints."))
 
-    return {"ok": success, "message": msg, "aura_detected": aura_detected, "battery": new_battery}
+            conn.commit()
+            conn.close()
+            return f"Success: {drone_id} assigned {len(waypoints)} waypoints."
 
+    try:
+        return database._with_retry(_do_write)
+    except Exception as e:
+        return f"Error writing waypoints for {drone_id}: {e}"
 
-def execute_thermal_scan(drone_id: str) -> Dict[str, Any]:
-    msg = mcp_server.thermal_scan(drone_id)
-    found = msg.startswith("SUCCESS:")
-    return {"ok": True, "found_survivor": found, "message": msg}
-
-
-read_world_state_tool = None
-calculate_path_and_battery_tool = None
-execute_drone_move_tool = None
-execute_thermal_scan_tool = None
+get_terrain_map_tool = None
+get_drone_status_tool = None
+assign_waypoints_tool = None
 
 if crewai_tool:
+    @crewai_tool("get_terrain_map")
+    def get_terrain_map_tool() -> str:
+        """Read the global water level and known map altitudes (excluding hidden obstacles and survivors)."""
+        return get_terrain_map()
 
-    @crewai_tool("read_world_state")
-    def read_world_state_tool() -> str:
-        """Read current world state (grid, environment, drones) from SQLite and return JSON."""
-        return json.dumps(read_world_state())
+    @crewai_tool("get_drone_status")
+    def get_drone_status_tool() -> str:
+        """Get live coordinates, batteries, and current zone assignments of all active drones."""
+        return json.dumps(get_drone_status())
 
-    @crewai_tool("calculate_path_and_battery")
-    def calculate_path_and_battery_tool(start_x: int, start_y: int, target_x: int, target_y: int) -> str:
-        """Compute A* path and Bingo Fuel required (to target + return to base) and return JSON."""
-        return json.dumps(calculate_path_and_battery(start_x, start_y, target_x, target_y))
-
-    @crewai_tool("execute_drone_move")
-    def execute_drone_move_tool(drone_id: str, x: int, y: int) -> str:
-        """Move a drone via MCP move_drone and return JSON with aura detection and battery."""
-        return json.dumps(execute_drone_move(drone_id, x, y))
-
-    @crewai_tool("execute_thermal_scan")
-    def execute_thermal_scan_tool(drone_id: str) -> str:
-        """Trigger MCP thermal_scan for a drone and return JSON with scan results."""
-        return json.dumps(execute_thermal_scan(drone_id))
+    @crewai_tool("log_mission_reasoning")
+    def log_mission_reasoning_tool(logic: str) -> str:
+        """Use this to write your Chain-of-Thought reasoning to the official mission logs database."""
+        # Simple inline log writer for the Strategy Agent
+        def _do_write():
+            with database.DB_WRITE_LOCK:
+                conn = database._connect()
+                cursor = conn.cursor()
+                cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", ("SYSTEM", f"STRATEGY: {logic}"))
+                conn.commit()
+                conn.close()
+            return "SUCCESS"
+        database._with_retry(_do_write)
+        return "Reasoning Logged."

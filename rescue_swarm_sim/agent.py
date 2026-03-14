@@ -1,19 +1,12 @@
 import json
 import time
+import threading
+import os
 
 import database
-
-import agents
 import ai_tools
 import tasks
-
-try:
-    from crewai import Crew, Process
-except Exception as e:  # pragma: no cover
-    Crew = None
-    Process = None
-    _CREWAI_IMPORT_ERROR = e
-
+from autopilot import autopilot_tick
 
 def _log_system(message: str):
     try:
@@ -21,73 +14,63 @@ def _log_system(message: str):
     except Exception:
         pass
 
+# ─── Threading state ──────────────────────────────────────────────────────────
+_ai_running = threading.Event()
 
-def _extract_text(result) -> str:
-    if result is None:
-        return ""
-    if isinstance(result, str):
-        return result
-    raw = getattr(result, "raw", None)
-    if isinstance(raw, str):
-        return raw
+def _run_flow_orchestrator():
+    """Runs the deterministic BFS partitioner and prompts LLM for log narrations."""
     try:
-        return str(result)
-    except Exception:
-        return ""
+        from flow import SwarmCommanderFlow
+        _log_system("Central Agent: Analyzing State and partitioning zones...")
+        flow = SwarmCommanderFlow()
+        flow.kickoff(inputs={"check_idle_only": False})
+    except Exception as e:
+        err_str = str(e)
+        _log_system(f"AI ERROR: {err_str[:400]}")
+        print(f"\n--- AI ORCHESTRATION ERROR ---\n{err_str}\n------------------------------\n")
+    finally:
+        _ai_running.clear()
 
 
 def run_swarm_commander():
-    if Crew is None:
-        raise RuntimeError(
-            f"crewai is not installed or failed to import: {_CREWAI_IMPORT_ERROR}. "
-            "Install with: pip install crewai"
-        )
-
-    terrain_analyst, swarm_commander = agents.build_agents()
-    t1, t2 = tasks.build_tasks(terrain_analyst, swarm_commander)
-
-    crew = Crew(
-        agents=[terrain_analyst, swarm_commander],
-        tasks=[t1, t2],
-        process=Process.sequential,
-        verbose=True,
-    )
-
-    _log_system("AI Swarm Commander online. Standing by for live mission state.")
-
-    last_wait_log = 0.0
+    _log_system("Central Intelligence and Drone Autopilot online.")
+    last_check_time = 0.0
 
     while True:
         try:
-            world = ai_tools.read_world_state()
-            grid_ok = isinstance(world.get("grid"), list) and len(world["grid"]) > 0
-            drones_ok = isinstance(world.get("drones"), list) and len(world["drones"]) > 0
-            if not (grid_ok and drones_ok):
-                now = time.time()
-                if now - last_wait_log > 15:
-                    _log_system("AI waiting: mission not initialized yet. Use the UI to DEPLOY SWARM.")
-                    last_wait_log = now
-                time.sleep(2)
-                continue
+            # ── PHASE 1: Deterministic Autopilot (always runs, never blocked) ─
+            autopilot_tick()
 
-            result = crew.kickoff()
-            text = _extract_text(result)
-            parsed = tasks.parse_json_or_none(text)
-            if parsed and isinstance(parsed, dict):
-                mission_lines = parsed.get("mission_log")
-                if isinstance(mission_lines, list):
-                    for line in mission_lines[-8:]:
-                        if isinstance(line, str) and line.strip():
-                            _log_system(f"AI: {line.strip()}")
-                else:
-                    _log_system("AI cycle complete.")
-            else:
-                compact = (text or "").strip().replace("\n", " ")
-                if compact:
-                    _log_system(f"AI output: {compact[:180]}")
+            # ── PHASE 2: Check for idle/unassigned drones (every 10s) ─
+            now = time.time()
+            if now - last_check_time > 10.0 and not _ai_running.is_set():
+                last_check_time = now
+
+                status = ai_tools.get_drone_status()
+                drones = status.get("drones", [])
+
+                if len(drones) == 0:
+                    time.sleep(1.0)
+                    continue
+
+                idle = ai_tools.get_idle_drones()
+                
+                # Check if we need initial partition
+                conn = database._connect()
+                c = conn.cursor()
+                c.execute("SELECT COUNT(*) FROM drone_waypoints")
+                wp_count = c.fetchone()[0]
+                conn.close()
+
+                if wp_count == 0 or idle:
+                    _ai_running.set()
+                    t = threading.Thread(target=_run_flow_orchestrator, daemon=True)
+                    t.start()
+
         except Exception as e:
-            _log_system(f"AI ERROR: {e}")
-        time.sleep(2)
+            _log_system(f"Main Loop ERROR: {e}")
+
+        time.sleep(1.0)
 
 
 if __name__ == "__main__":

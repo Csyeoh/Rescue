@@ -152,10 +152,14 @@ class DisasterZoneModel(Model):
     def _clear_old_mission_data(self):
         conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM grid")
+        cursor.execute("DELETE FROM question_plane")
+        cursor.execute("DELETE FROM answer_plane")
         cursor.execute("DELETE FROM drones")
         cursor.execute("DELETE FROM survivors")
         cursor.execute("DELETE FROM logs")
+        cursor.execute("DELETE FROM drone_zones")
+        cursor.execute("DELETE FROM drone_waypoints")
+        cursor.execute("DELETE FROM cell_weights")
         conn.commit()
         conn.close()
 

@@ -78,7 +78,14 @@ def get_world_state():
         
         # 3. Fetch terrain data
         try:
-            cursor.execute("SELECT x, y, altitude, is_obstacle, terrain_type, obstacle_discovered FROM grid")
+            # We join the question_plane (Ground Truth) with the answer_plane (Known AI Map)
+            # The UI needs the ground truth `is_obstacle` so it can track the hidden layout.
+            # But it also needs `obstacle_discovered` to render the UI 'fog of war'.
+            cursor.execute('''
+                SELECT q.x, q.y, q.altitude, q.is_obstacle, q.terrain_type, a.obstacle_discovered 
+                FROM question_plane q
+                JOIN answer_plane a ON q.x = a.x AND q.y = a.y
+            ''')
             terrain = [
                 {
                     "x": row[0], "y": row[1], "altitude": row[2], 

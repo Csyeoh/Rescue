@@ -1,7 +1,16 @@
 import os
 
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
+
+try:
+    from langchain_openai import ChatOpenAI
+except ImportError:
+    ChatOpenAI = None
+
+try:
+    from langchain_google_genai import ChatGoogleGenerativeAI
+except ImportError:
+    ChatGoogleGenerativeAI = None
 
 try:
     from crewai import Agent
@@ -12,17 +21,25 @@ except Exception as e:  # pragma: no cover
 import ai_tools
 
 
-def _ensure_google_api_key():
-    load_dotenv()
-    if os.getenv("GOOGLE_API_KEY"):
-        return
-    if os.getenv("GEMINI_API_KEY"):
-        os.environ["GOOGLE_API_KEY"] = os.environ["GEMINI_API_KEY"]
-
+# ─── Model selection ─────────────────────────────────────────────────────────
+# Bypassing OpenRouter due to 402/404 blocking errors on free tiers.
+# Using Google Direct API with Gemini 2.5 Flash for high speed and generous free limits.
 
 def build_llm():
-    _ensure_google_api_key()
-    return ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0.2)
+    load_dotenv()
+    
+    # Enforce Google API Key usage
+    google_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not google_key:
+        raise ValueError("No GEMINI_API_KEY found in .env file.")
+    
+    os.environ["GOOGLE_API_KEY"] = google_key
+    
+    if ChatGoogleGenerativeAI is None:
+        raise RuntimeError("langchain-google-genai is not installed.")
+        
+    print("[LLM] Using Google Direct → gemini-2.5-flash")
+    return ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
 
 
 def build_agents():
@@ -35,37 +52,27 @@ def build_agents():
     llm = build_llm()
 
     tools = []
-    if (
-        getattr(ai_tools, "read_world_state_tool", None)
-        and getattr(ai_tools, "calculate_path_and_battery_tool", None)
-        and getattr(ai_tools, "execute_drone_move_tool", None)
-        and getattr(ai_tools, "execute_thermal_scan_tool", None)
-    ):
-        tools = [
-            ai_tools.read_world_state_tool,
-            ai_tools.calculate_path_and_battery_tool,
-            ai_tools.execute_drone_move_tool,
-            ai_tools.execute_thermal_scan_tool,
-        ]
+    if getattr(ai_tools, "log_mission_reasoning_tool", None):
+        tools = [ai_tools.log_mission_reasoning_tool]
 
     terrain_analyst = Agent(
         role="Geospatial Data Analyst",
-        goal="Transform live terrain + water physics into a clear Flood Risk Map (Priority 1 vs Priority 2) for all 20x20 tiles.",
-        backstory="You are a GIS analyst for disaster response operations. You produce crisp, machine-readable risk maps from live sensor and elevation data.",
+        goal="Determine areas of the fastest flooding based on the 'Answer Plane' (known altitude) and current water level.",
+        backstory="You are a GIS analyst mapping disaster contours. You identify bounding boxes covering high-risk lowlands.",
         llm=llm,
         tools=tools,
         allow_delegation=False,
-        verbose=True,
+        verbose=False,
     )
 
     swarm_commander = Agent(
-        role="Tactical Swarm Commander",
-        goal="Assign drones to Priority 1 clusters while enforcing the 10% reserve constraint and the Bingo Fuel check before dispatch.",
-        backstory="You command autonomous rescue drones under extreme flooding conditions. You never violate safety reserves and you exploit thermal-aura cues immediately.",
+        role="Central Swarm Commander",
+        goal="Explain the strategic reasoning for the deterministic Greedy Weighted BFS zone partition and log it using `log_mission_reasoning_tool`.",
+        backstory="You are a tactical coordinator. The deterministic algorithm has already partitioned the map based on terrain weight and drone battery. Your job is to narrate the tactical reasoning step-by-step for the mission log.",
         llm=llm,
         tools=tools,
         allow_delegation=False,
-        verbose=True,
+        verbose=False,
     )
 
     return terrain_analyst, swarm_commander

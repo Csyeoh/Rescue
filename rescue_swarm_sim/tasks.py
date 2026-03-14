@@ -8,60 +8,50 @@ except Exception as e:  # pragma: no cover
 
 
 RISK_MAP_PROMPT = """
-You are the Terrain Analyst.
+You are the Geospatial Data Analyst.
 
-Use the tool read_world_state to fetch:
-- grid: list of {x,y,altitude,is_obstacle}
-- environment: {global_water_level, water_speed}
+You MUST NOT WAIT for water levels to rise. Your job is to preemptively map the terrain.
+The entire map is 0-19 on X and 0-19 on Y.
 
-Produce a Flood Risk Map for every tile in the 20x20 grid:
-- Priority 1: Flooding Soon
-- Priority 2: Safe
-
-Use a simple, explicit rule based on altitude, global_water_level, and projected rise over the next 30 seconds:
-projected_water = global_water_level + (water_speed * 30)
-Priority 1 if altitude <= projected_water, else Priority 2.
+Instantly partition the entire 20x20 grid into 4 distinct, non-overlapping Bounding Boxes (Quadrants).
+Do NOT overthink this. Just divide the map into 4 equal rectangles.
 
 Return ONLY valid JSON of the form:
 {
-  "rule": "...",
-  "environment": {"global_water_level": number, "water_speed": number, "projected_water": number},
-  "priority_1": [{"x":int,"y":int}, ...],
-  "priority_2": [{"x":int,"y":int}, ...]
+  "hazard_zones": [
+     {"name": "Northwest", "x_min": 0, "x_max": 9, "y_min": 0, "y_max": 9, "priority": 1},
+     {"name": "Northeast", "x_min": 10, "x_max": 19, "y_min": 0, "y_max": 9, "priority": 1},
+     ...
+  ]
 }
-
 Do not wrap the JSON in markdown fences. Do not include any text outside the JSON.
 """
 
-
 SWARM_DEPLOYMENT_PROMPT = """
-You are the Swarm Commander.
+You are the Central Swarm Commander. You MUST reason out loud before every action.
 
-Inputs:
-- The previous task output is the Flood Risk Map JSON.
-- You MUST call read_world_state to get current drones (id,x,y,battery).
+Step 1: Call `get_drone_status` to retrieve all drones and their battery levels and zone assignments.
 
-Mission:
-1) Cluster Priority 1 tiles into K clusters, where K = number of active drones.
-   - You may use sklearn.cluster.KMeans if available in your environment, otherwise implement a simple centroid-based clustering heuristic.
-2) For each drone, pick a cluster (centroid or representative tile) to dispatch toward.
-3) BEFORE moving a drone, you MUST call calculate_path_and_battery(start_x,start_y,target_x,target_y).
-   - Enforce the 10% Reserve Constraint:
-     dispatch only if (current_battery - battery_required) >= 10
-4) Execute movement by stepping through the returned path, using execute_drone_move for each (x,y) step.
-5) If any execute_drone_move response indicates a faint thermal aura, immediately call execute_thermal_scan for that drone.
+Step 2: For each idle drone (UNASSIGNED or is_complete=true), write a reasoning statement like:
+  "drone_1 has 84% battery. The NW quadrant is nearby. Assigning drone_1 to X:0-9, Y:0-9."
+  "drone_2 has 31% battery. Battery is low, so I will assign it the smallest closest zone."
 
-Output requirements:
-- Return ONLY valid JSON.
-- Include an explicit Battery Math Audit per attempted dispatch with:
-  - drone_id, current_battery, steps_to_target, steps_to_base, battery_required, reserve_after, allowed (true/false)
-- Include a compact Mission Log list of strings summarizing actions taken.
+Step 3: Based on your battery reasoning, call `assign_drone_zone(drone_id, x_min, x_max, y_min, y_max)` 
+for each idle drone. Use the 4 Quadrants from the Analyst:
+  - NW: x_min=0, x_max=9, y_min=0, y_max=9
+  - NE: x_min=10, x_max=19, y_min=0, y_max=9
+  - SW: x_min=0, x_max=9, y_min=10, y_max=19
+  - SE: x_min=10, x_max=19, y_min=10, y_max=19
+  Do NOT assign overlapping zones.
 
-JSON shape:
+Return ONLY valid JSON with your reasoning and actions:
 {
-  "assignments": [{"drone_id":"...", "target":{"x":int,"y":int}, "cluster_size":int}],
-  "battery_audit": [{"drone_id":"...", "current_battery":int, "steps_to_target":int, "steps_to_base":int, "battery_required":int, "reserve_after":int, "allowed":bool}],
-  "mission_log": ["...", "..."]
+  "mission_log": [
+    "REASONING: drone_1 has 84% battery — assigning it the large NW quadrant (0-9, 0-9) since it has enough fuel.",
+    "ACTION: Assigned drone_1 to X:0-9, Y:0-9.",
+    "REASONING: drone_2 has 32% battery — assigning the closer NE quadrant to conserve return fuel.",
+    "ACTION: Assigned drone_2 to X:10-19, Y:0-9."
+  ]
 }
 
 Do not wrap the JSON in markdown fences. Do not include any text outside the JSON.
@@ -77,13 +67,13 @@ def build_tasks(terrain_analyst, swarm_commander):
 
     t1 = Task(
         description=RISK_MAP_PROMPT.strip(),
-        expected_output="JSON Flood Risk Map with Priority 1 and Priority 2 tile lists.",
+        expected_output="JSON list of hazard zone bounding boxes.",
         agent=terrain_analyst,
     )
 
     t2 = Task(
         description=SWARM_DEPLOYMENT_PROMPT.strip(),
-        expected_output="JSON mission result with assignments, battery audit, and mission log.",
+        expected_output="JSON mission log confirming zone assignments.",
         agent=swarm_commander,
         context=[t1],
     )

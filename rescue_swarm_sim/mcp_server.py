@@ -10,7 +10,7 @@ mcp = FastMCP("RescueSwarm")
 @mcp.tool()
 def discover_drones() -> list[str]:
     """Returns a list of all active drone IDs available for command in the simulation."""
-    conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+    conn = database._connect()
     cursor = conn.cursor()
     cursor.execute("SELECT drone_id FROM drones")
     drones = [row[0] for row in cursor.fetchall()]
@@ -20,7 +20,7 @@ def discover_drones() -> list[str]:
 @mcp.tool()
 def get_battery_status(drone_id: str) -> str:
     """Returns the current battery level (0-100) of a specific drone."""
-    conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+    conn = database._connect()
     cursor = conn.cursor()
     cursor.execute("SELECT battery FROM drones WHERE drone_id=?", (drone_id,))
     result = cursor.fetchone()
@@ -33,7 +33,7 @@ def get_battery_status(drone_id: str) -> str:
 @mcp.tool()
 def get_hardware_status(drone_id: str) -> str:
     """Returns the full diagnostic hardware status of a drone including location, battery, flight state, and system health."""
-    conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+    conn = database._connect()
     cursor = conn.cursor()
     cursor.execute("SELECT x, y, battery, is_active, health_status FROM drones WHERE drone_id=?", (drone_id,))
     result = cursor.fetchone()
@@ -63,71 +63,77 @@ def move_drone(drone_id: str, x: int, y: int) -> str:
     if not (0 <= x < 20 and 0 <= y < 20):
         return "Failure: Coordinates out of bounds. Grid is strictly 0 to 19."
 
-    conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
-    cursor = conn.cursor()
+    with database.DB_WRITE_LOCK:
+        conn = database._connect()
+        cursor = conn.cursor()
 
-    # 1. Check current battery
-    cursor.execute("SELECT battery FROM drones WHERE drone_id=?", (drone_id,))
-    drone_data = cursor.fetchone()
-    
-    if not drone_data:
-        conn.close()
-        return f"Error: {drone_id} not found."
-
-    battery = drone_data[0]
-    if battery < 2:
-        conn.close()
-        return f"Failure: {drone_id} battery exhausted. Drone is grounded."
-
-    # 2. Check for physical obstacles at the TARGET destination
-    try:
-        cursor.execute("SELECT is_obstacle FROM grid WHERE x=? AND y=?", (x, y))
-        grid_data = cursor.fetchone()
+        # 1. Check current battery
+        cursor.execute("SELECT battery FROM drones WHERE drone_id=?", (drone_id,))
+        drone_data = cursor.fetchone()
         
-        if grid_data and grid_data[0] == 1:
-            # Map the obstacle since we bumped into it
-            cursor.execute("UPDATE grid SET obstacle_discovered=1 WHERE x=? AND y=?", (x, y))
-            database.log_action(drone_id, f"CRITICAL: Flight path to ({x}, {y}) blocked by physical obstacle!")
-            conn.commit()
+        if not drone_data:
             conn.close()
-            return f"Failure: Movement to ({x}, {y}) blocked by an obstacle. Route around it."
-    except sqlite3.OperationalError:
-        pass 
+            return f"Error: {drone_id} not found."
 
-    # 3. Process the successful move
-    new_battery = 100 if (x == 9 and y == 9) else battery - 2
-    cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (x, y, new_battery, drone_id))
+        battery = drone_data[0]
+        if battery < 2:
+            conn.close()
+            return f"Failure: {drone_id} battery exhausted. Drone is grounded."
 
-    # 4. PASSIVE SENSORS: Check the 4 adjacent grids (Up, Down, Left, Right)
-    adjacent_coords = [(x, y-1), (x, y+1), (x-1, y), (x+1, y)]
-    
-    # --- SENSOR A: Proximity Radar (Obstacles) ---
-    detected_obstacles = []
-    for ax, ay in adjacent_coords:
-        cursor.execute("SELECT is_obstacle, obstacle_discovered FROM grid WHERE x = ? AND y = ?", (ax, ay))
-        row = cursor.fetchone()
-        # If it is an obstacle and hasn't been mapped yet
-        if row and row[0] == 1 and row[1] == 0: 
-            detected_obstacles.append((ax, ay))
-            # Instantly map it so the UI draws it and the AI knows it's there!
-            cursor.execute("UPDATE grid SET obstacle_discovered = 1 WHERE x = ? AND y = ?", (ax, ay))
+        # 2. Check for physical obstacles at the TARGET destination (GROUND TRUTH)
+        try:
+            cursor.execute("SELECT is_obstacle FROM question_plane WHERE x=? AND y=?", (x, y))
+            grid_data = cursor.fetchone()
+            
+            if grid_data and grid_data[0] == 1:
+                # Map the obstacle to the Answer Plane since we bumped into it
+                cursor.execute("UPDATE answer_plane SET obstacle_discovered=1 WHERE x=? AND y=?", (x, y))
+                from datetime import datetime
+                cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, f"CRITICAL: Flight path to ({x}, {y}) blocked by physical obstacle!"))
+                conn.commit()
+                conn.close()
+                return f"Failure: Movement to ({x}, {y}) blocked by an obstacle. Route around it."
+        except sqlite3.OperationalError:
+            pass 
 
-    # --- SENSOR B: Thermal Aura (Survivors) ---
-    thermal_alert = False
-    for ax, ay in adjacent_coords:
-        cursor.execute("SELECT is_discovered FROM survivors WHERE x = ? AND y = ?", (ax, ay))
-        s_row = cursor.fetchone()
-        # If there is a survivor and they haven't been rescued yet
-        if s_row and s_row[0] == 0:
-            thermal_alert = True
-            break # One ping is enough for the aura
+        # 3. Process the successful move
+        new_battery = 100 if (x == 9 and y == 9) else battery - 2
+        cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (x, y, new_battery, drone_id))
 
-    # 5. Log the action to the UI console
-    log_msg = "Returned to Base Camp. Recharging to 100%." if (x == 9 and y == 9) else f"Moved to sector ({x}, {y})."
-    database.log_action(drone_id, log_msg)
+        # 4. PASSIVE SENSORS: Check the 4 adjacent grids (Up, Down, Left, Right)
+        adjacent_coords = [(x, y-1), (x, y+1), (x-1, y), (x+1, y)]
+        
+        # --- SENSOR A: Proximity Radar (Obstacles) ---
+        detected_obstacles = []
+        for ax, ay in adjacent_coords:
+            # Check the ground truth for physical obstacles
+            cursor.execute("SELECT is_obstacle FROM question_plane WHERE x = ? AND y = ?", (ax, ay))
+            row = cursor.fetchone()
+            if row and row[0] == 1:
+                # Check if it's already mapped
+                cursor.execute("SELECT obstacle_discovered FROM answer_plane WHERE x = ? AND y = ?", (ax, ay))
+                a_row = cursor.fetchone()
+                if a_row and a_row[0] == 0:
+                    detected_obstacles.append((ax, ay))
+                    # Instantly map it so the UI draws it and the AI knows it's there!
+                    cursor.execute("UPDATE answer_plane SET obstacle_discovered = 1 WHERE x = ? AND y = ?", (ax, ay))
 
-    conn.commit()
-    conn.close()
+        # --- SENSOR B: Thermal Aura (Survivors) ---
+        thermal_alert = False
+        for ax, ay in adjacent_coords:
+            cursor.execute("SELECT is_discovered FROM survivors WHERE x = ? AND y = ?", (ax, ay))
+            s_row = cursor.fetchone()
+            # If there is a survivor and they haven't been rescued yet
+            if s_row and s_row[0] == 0:
+                thermal_alert = True
+                break # One ping is enough for the aura
+
+        # 5. Log the action to the UI console (inline to avoid nested connection deadlock)
+        log_msg = "Returned to Base Camp. Recharging to 100%." if (x == 9 and y == 9) else f"Moved to sector ({x}, {y})."
+        cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, log_msg))
+
+        conn.commit()
+        conn.close()
     
     # 6. Simulate the physical flight time! 
     # The AI is forced to wait 1.0 second before it receives the sensor feedback.
@@ -151,7 +157,7 @@ def thermal_scan(drone_id: str) -> str:
     Performs a high-powered thermal scan at the drone's EXACT current (x, y) location.
     Returns a message indicating if a hidden survivor was found on this specific grid square.
     """
-    conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+    conn = database._connect()
     cursor = conn.cursor()
     
     cursor.execute("SELECT x, y FROM drones WHERE drone_id=?", (drone_id,))
@@ -188,11 +194,11 @@ def get_known_map() -> str:
     Use this to analyze the landscape, calculate flood risks, and run clustering algorithms.
     NOTE: This does NOT reveal hidden obstacles or survivors.
     """
-    conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+    conn = database._connect()
     cursor = conn.cursor()
     
-    # We only pull x, y, altitude, and terrain_type. We hide the obstacle data!
-    cursor.execute("SELECT x, y, altitude, terrain_type FROM grid")
+    # We only pull x, y, altitude, and terrain_type from the known Answer Plane!
+    cursor.execute("SELECT x, y, altitude, terrain_type FROM answer_plane")
     grid_data = cursor.fetchall()
     
     # Also fetch the current global water level so the AI knows what is currently flooded
