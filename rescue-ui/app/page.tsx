@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 export default function Dashboard() {
   const [worldState, setWorldState] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isPreview, setIsPreview] = useState(false);
+  const [mapData, setMapData] = useState<any>(null);
   
   const [config, setConfig] = useState({
     scenario: "A dense residential area near a steep hill.",
-    flood_type: "Flash Flood", // NEW
     num_drones: 2,
     drone_battery: 100,
     num_survivors: 5,
@@ -16,59 +17,78 @@ export default function Dashboard() {
   });
 
   const handleDeploySwarm = async () => {
-    setIsGenerating(true);
     try {
+      const deployConfig = { ...config, map_data: mapData };
       const response = await fetch("http://localhost:8000/api/start_mission", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify(deployConfig),
       });
 
       const result = await response.json();
       console.log("Mission Status:", result);
+      setIsPreview(false);
     } catch (error) {
       console.error("Failed to connect to Nexus Core:", error);
       alert("Failed to start simulation. Check FastAPI server.");
     }
-    setIsGenerating(false);
   };
 
-  const handleRandomDeploy = async () => {
+  const handleGenerateMap = async (useRandom = false) => {
     setIsGenerating(true);
-    const obstacleDiffs = ["low", "med", "high"];
-    const simDiffs = ["easy", "hard"];
-    const floodTypes = ["River (Monsoon) Flood", "Flash Flood", "Storm Surge", "Dam Break"]; // NEW
+    let currentConfig = { ...config };
     
-    const randomConfig = {
-      scenario: "", 
-      flood_type: floodTypes[Math.floor(Math.random() * floodTypes.length)], // NEW
-      num_drones: Math.floor(Math.random() * 5) + 2,
-      drone_battery: 100,
-      num_survivors: Math.floor(Math.random() * 12) + 4, 
-      obstacle_difficulty: obstacleDiffs[Math.floor(Math.random() * obstacleDiffs.length)],
-      sim_difficulty: simDiffs[Math.floor(Math.random() * simDiffs.length)]
-    };
-
-    setConfig(randomConfig);
+    if (useRandom) {
+      const obstacleDiffs = ["low", "med", "high"];
+      const simDiffs = ["easy", "hard"];
+      
+      currentConfig = {
+        ...currentConfig,
+        scenario: "", 
+        num_drones: Math.floor(Math.random() * 5) + 2,
+        num_survivors: Math.floor(Math.random() * 12) + 4, 
+        obstacle_difficulty: obstacleDiffs[Math.floor(Math.random() * obstacleDiffs.length)],
+        sim_difficulty: simDiffs[Math.floor(Math.random() * simDiffs.length)]
+      };
+      setConfig(currentConfig);
+    }
 
     try {
-      const response = await fetch("http://localhost:8000/api/start_mission", {
+      const response = await fetch("http://localhost:8000/api/generate_map", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(randomConfig),
+        body: JSON.stringify(currentConfig),
       });
 
       const result = await response.json();
-      console.log("Random Mission Status:", result);
+      console.log("Map Generation Status:", result);
+      
+      if (result.map_data) {
+        setIsPreview(true);
+        setMapData(result.map_data);
+        
+        const previewState = {
+          grid: { width: 20, height: 20 },
+          terrain: result.map_data.cells.map((c: any) => ({ ...c, obstacle_discovered: false })),
+          drones: Array.from({length: currentConfig.num_drones}).map((_, i) => ({ id: `drone_${i+1}`, x: 9, y: 9, battery: 100 })),
+          survivors: result.map_data.blueprint.survivors.map((s: any, i: number) => ({ id: `survivor_${i+1}`, x: s.x, y: s.y, discovered: false })),
+          logs: [{ time: new Date().toISOString().split('T')[1].substring(0,8), drone: "SYSTEM", message: "Map preview generated. Awaiting deployment." }]
+        };
+        setWorldState(previewState);
+        setConfig({ ...currentConfig, scenario: result.map_data.scenario });
+      } else {
+        alert(result.message || "Failed to generate map.");
+      }
     } catch (error) {
       console.error("Failed to connect to Nexus Core:", error);
-      alert("Failed to start simulation. Check FastAPI server.");
+      alert("Failed to generate map. Check FastAPI server.");
     }
     setIsGenerating(false);
   };
 
   useEffect(() => {
     const fetchState = async () => {
+      if (isPreview) return;
       try {
         const res = await fetch("http://localhost:8000/state");
         const data = await res.json();
@@ -79,7 +99,7 @@ export default function Dashboard() {
     };
     const interval = setInterval(fetchState, 500);
     return () => clearInterval(interval);
-  }, []);
+  }, [isPreview]);
 
   if (!worldState) {
     return <div className="p-10 text-white flex justify-center items-center min-h-screen bg-gray-950">Connecting to Drone Swarm API...</div>;
@@ -95,7 +115,7 @@ export default function Dashboard() {
     );
   }
 
-  const { grid, terrain, drones, survivors, logs, environment } = worldState;
+  const { grid, terrain, drones, survivors, logs } = worldState;
 
   const renderCell = (x: number, y: number, isGroundTruth: boolean) => {
     const cellTerrain = terrain?.find((t: any) => t.x === x && t.y === y);
@@ -108,11 +128,14 @@ export default function Dashboard() {
             isObstacleVisible = true;
             bgColor = "black";
         } else {
-            // UPDATED: Divide by 100.0 to account for massive 80m+ skyscrapers
             const opacity = Math.min(1.0, 0.2 + (cellTerrain.altitude / 100.0) * 0.8);
-            bgColor = cellTerrain.terrain_type === 'building' 
-                ? `rgba(220, 38, 38, ${opacity})`
-                : `rgba(22, 163, 74, ${opacity})`;
+            if (cellTerrain.terrain_type === 'multiple_story') {
+                bgColor = `rgba(185, 28, 28, ${opacity})`; // Darker red
+            } else if (cellTerrain.terrain_type === 'single_story') {
+                bgColor = `rgba(249, 115, 22, ${opacity})`; // Orange
+            } else {
+                bgColor = `rgba(22, 163, 74, ${opacity})`; // Green terrain
+            }
         }
     }
 
@@ -127,12 +150,6 @@ export default function Dashboard() {
         style={{ backgroundColor: bgColor }} 
         title={cellTerrain ? `Alt: ${cellTerrain.altitude.toFixed(1)}m | Type: ${cellTerrain.terrain_type}` : ""}
       >
-        {/* Layer 1: Water (Calculated dynamically on the UI side!) */}
-        {cellTerrain && environment?.global_water_level > cellTerrain.altitude && !isObstacleVisible && (
-          // UPDATED: Water scales opacity up to 20 meters deep for visual effect
-          <div className="absolute inset-0 bg-cyan-600 pointer-events-none" 
-               style={{ opacity: 0.3 + (Math.min(environment.global_water_level - cellTerrain.altitude, 20) / 20) * 0.7 }} />
-        )}
         {isObstacleVisible && <div className="absolute inset-0 border border-gray-600 shadow-inner z-10" />}
         {isBaseCamp && <div className="absolute inset-0 bg-green-500/40 animate-pulse z-20 shadow-[0_0_15px_rgba(34,197,94,0.8)]" />}
         {isSurvivorVisible && (
@@ -187,20 +204,6 @@ export default function Dashboard() {
             </div>
 
             <div className="mb-4">
-              <label className="block text-[10px] mb-1 text-gray-400 uppercase tracking-wider">Flood Type</label>
-              <select 
-                value={config.flood_type}
-                onChange={(e) => setConfig({...config, flood_type: e.target.value})}
-                className="w-full bg-gray-800 p-2 rounded border border-gray-700 focus:border-cyan-500 focus:outline-none text-sm text-white font-semibold"
-              >
-                <option value="River (Monsoon) Flood">River (Monsoon) Flood</option>
-                <option value="Flash Flood">Flash Flood</option>
-                <option value="Storm Surge">Storm Surge</option>
-                <option value="Dam Break">Dam Break</option>
-              </select>
-            </div>
-
-            <div className="mb-4">
               <label className="block text-sm mb-1 text-gray-400">Obstacle Density</label>
               <select 
                 value={config.obstacle_difficulty}
@@ -227,20 +230,28 @@ export default function Dashboard() {
 
             <div className="flex flex-col gap-3">
               <button 
-                onClick={handleDeploySwarm}
+                onClick={() => handleGenerateMap(false)}
                 disabled={isGenerating}
-                className={`w-full font-bold py-3 px-4 rounded transition-colors shadow-lg tracking-wide ${isGenerating ? 'bg-gray-700 text-gray-400' : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-900/50'}`}
+                className={`w-full font-bold py-2 px-4 rounded transition-colors shadow-lg tracking-wide text-sm border ${isGenerating ? 'bg-gray-800 border-gray-700 text-gray-500' : 'bg-gray-800 hover:bg-gray-700 text-cyan-400 border-cyan-900'}`}
               >
-                {isGenerating ? "GENERATING AI MAP..." : "DEPLOY SWARM"}
+                {isGenerating ? "GENERATING AI MAP..." : "GENERATE MAP (CURRENT CONFIG)"}
               </button>
 
               <button 
-                onClick={handleRandomDeploy}
+                onClick={() => handleGenerateMap(true)}
                 disabled={isGenerating}
                 className={`w-full font-bold py-2 px-4 rounded transition-colors shadow-lg tracking-wide text-xs border flex items-center justify-center gap-2 ${isGenerating ? 'bg-gray-800 border-gray-700 text-gray-500' : 'bg-purple-600 hover:bg-purple-500 text-white border-purple-400/30'}`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-5.44-5.44"/></svg>
-                {isGenerating ? "GENERATING AI MAP..." : "QUICK RANDOM DEPLOY"}
+                {isGenerating ? "GENERATING AI MAP..." : "GENERATE RANDOM MAP"}
+              </button>
+
+              <button 
+                onClick={handleDeploySwarm}
+                disabled={isGenerating}
+                className={`w-full mt-2 font-bold py-3 px-4 rounded transition-colors shadow-lg tracking-wide ${isGenerating ? 'bg-gray-700 text-gray-400' : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-900/50'}`}
+              >
+                DEPLOY SWARM
               </button>
             </div>
           </div>
@@ -250,20 +261,6 @@ export default function Dashboard() {
         <div className="flex flex-col flex-grow">
           
           <div className="flex gap-8 mb-4 bg-gray-900 border border-gray-700 px-6 py-3 rounded-lg shadow-2xl w-full justify-center items-center">
-             <div className="text-center">
-                 <p className="text-[10px] text-gray-400 uppercase tracking-widest mb-1">Initial Base Water Level</p>
-                 <p className="text-2xl font-bold text-cyan-400">{environment?.global_water_level?.toFixed(2) || "0.00"}m</p>
-             </div>
-             
-             <div className="h-8 w-px bg-gray-700"></div>
-             
-             <div className="text-center">
-                 <p className="text-[10px] text-gray-400 uppercase tracking-widest mb-1">Rising Speed</p>
-                 <p className="text-2xl font-bold text-blue-400">+{environment?.water_speed?.toFixed(4) || "0.0000"}m/tick</p>
-             </div>
-             
-             <div className="h-8 w-px bg-gray-700"></div>
-             
              {/* NEW: Rescue Progress Tracker */}
              <div className="text-center">
                  <p className="text-[10px] text-gray-400 uppercase tracking-widest mb-1">Rescue Progress</p>
@@ -316,12 +313,19 @@ export default function Dashboard() {
               <div className="flex flex-col gap-6 bg-gray-900 border border-gray-800 p-5 rounded-lg shadow-xl mt-8">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest border-b border-gray-700 pb-2">Altitude Scale</h3>
                 <div>
-                  <p className="text-xs text-red-400 mb-1.5 font-semibold">Building (Red)</p>
+                  <p className="text-xs text-red-500 mb-1.5 font-semibold">Multiple Story (Red)</p>
                   <div className="h-4 w-32 rounded bg-gradient-to-r from-red-600/20 to-red-600 border border-red-900"></div>
                   <div className="flex justify-between text-[10px] text-gray-500 mt-1.5 font-mono">
-                    <span>1m</span>
-                    {/* UPDATED TO 100m+ */}
+                    <span>20m</span>
                     <span>100m+</span>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-orange-500 mb-1.5 font-semibold">Single Story (Orange)</p>
+                  <div className="h-4 w-32 rounded bg-gradient-to-r from-orange-500/20 to-orange-500 border border-orange-900"></div>
+                  <div className="flex justify-between text-[10px] text-gray-500 mt-1.5 font-mono">
+                    <span>3m</span>
+                    <span>10m</span>
                   </div>
                 </div>
                 <div>
@@ -336,8 +340,9 @@ export default function Dashboard() {
               </div>
           </div>
 
-          <div className="flex justify-center gap-6 mt-6 text-xs font-semibold uppercase tracking-wide text-gray-400 bg-gray-900 px-6 py-3 rounded-full border border-gray-800 max-w-2xl mx-auto">
-            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-600 rounded-sm"></div> Building</div>
+          <div className="flex justify-center gap-6 mt-6 text-xs font-semibold uppercase tracking-wide text-gray-400 bg-gray-900 px-6 py-3 rounded-full border border-gray-800 max-w-4xl mx-auto">
+            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-red-600 rounded-sm"></div> Multi-Story</div>
+            <div className="flex items-center gap-2"><div className="w-3 h-3 bg-orange-500 rounded-sm"></div> Single-Story</div>
             <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-600 rounded-sm"></div> Terrain</div>
             <div className="flex items-center gap-2"><div className="w-3 h-3 bg-black border border-gray-600 rounded-sm"></div> Obstacle</div>
             <div className="flex items-center gap-2"><div className="w-3 h-3 bg-yellow-400 rounded-full"></div> Survivor</div>

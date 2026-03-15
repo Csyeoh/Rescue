@@ -10,7 +10,7 @@ except Exception as e:  # pragma: no cover
 RISK_MAP_PROMPT = """
 You are the Geospatial Data Analyst.
 
-You MUST NOT WAIT for water levels to rise. Your job is to preemptively map the terrain.
+Your job is to preemptively map the terrain.
 The entire map is 0-19 on X and 0-19 on Y.
 
 Instantly partition the entire 20x20 grid into 4 distinct, non-overlapping Bounding Boxes (Quadrants).

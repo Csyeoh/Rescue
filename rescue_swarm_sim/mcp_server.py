@@ -191,7 +191,7 @@ def thermal_scan(drone_id: str) -> str:
 def get_known_map() -> str:
     """
     Returns the known layout of the 20x20 grid, including altitudes and terrain types.
-    Use this to analyze the landscape, calculate flood risks, and run clustering algorithms.
+    Use this to analyze the landscape and run clustering algorithms.
     NOTE: This does NOT reveal hidden obstacles or survivors.
     """
     conn = database._connect()
@@ -201,19 +201,13 @@ def get_known_map() -> str:
     cursor.execute("SELECT x, y, altitude, terrain_type FROM answer_plane")
     grid_data = cursor.fetchall()
     
-    # Also fetch the current global water level so the AI knows what is currently flooded
-    cursor.execute("SELECT global_water_level FROM environment WHERE id=1")
-    env_data = cursor.fetchone()
-    water_level = env_data[0] if env_data else 0.0
-    
     conn.close()
     
     if not grid_data:
         return "Error: Map data not initialized yet."
 
     # Format the data cleanly for the AI to read
-    map_details = f"CURRENT GLOBAL WATER LEVEL: {water_level:.2f}m\n"
-    map_details += "GRID DATA (x, y, altitude, type):\n"
+    map_details = "GRID DATA (x, y, altitude, type):\n"
     
     # To save AI token context limits, we can just pass the raw list
     map_list = [{"x": row[0], "y": row[1], "alt": round(row[2], 1), "type": row[3]} for row in grid_data]

@@ -4,10 +4,9 @@ from mesa.time import RandomActivation
 import database
 import sqlite3
 import random
-import math 
 import time
-import threading # NEW: For the live simulation heartbeat
-import world_builder
+import threading
+import map_generator
 
 class TerrainAgent(Agent):
     def __init__(self, custom_id, model, altitude=0.0, is_obstacle=False, terrain_type="terrain"):
@@ -17,12 +16,9 @@ class TerrainAgent(Agent):
         self.is_obstacle = is_obstacle
         self.terrain_type = terrain_type 
         self.obstacle_discovered = False 
-        self.local_water_level = 0.0
 
     def step(self):
-        # Calculates how deep the water is on THIS specific grid square
-        raw_water = self.model.global_water_level - self.altitude
-        self.local_water_level = max(0.0, raw_water)
+        pass
 
 class DroneAgent(Agent):
     def __init__(self, custom_id, model, initial_battery=100):
@@ -55,93 +51,43 @@ class DisasterZoneModel(Model):
 
         if obstacle_diff == "high": obstacle_prob = 0.25
         elif obstacle_diff == "low": obstacle_prob = 0.05
-        else: obstacle_prob = 0.15 
+        else: obstacle_prob = 0.15
 
-        # Grab the flood type from the config
-        self.flood_type = config.get("flood_type", "Flash Flood")
-
-        # ==========================================
-        # 🧠 AUTO-GENERATE SCENARIO FOR GEMINI
-        # ==========================================
-        scenario_prompt = config.get("scenario")
-        if not scenario_prompt:
-            themes = [
-                "A dense downtown commercial district.",
-                "A quiet suburban neighborhood in a valley.",
-                "A mountainous rural village with steep hills.",
-                "An industrial warehouse district.",
-                "A coastal town hit by a massive tsunami.",
-                "A forested camp ground hit by slow, heavy rain."
-            ]
-            scenario_prompt = random.choice(themes)
-            
-        print(f"Asking Gemini to design: {scenario_prompt} | Type: {self.flood_type}")
-        # Pass the flood_type to the AI!
-        blueprint = world_builder.generate_disaster_blueprint(scenario_prompt, num_survivors, self.flood_type)
-        
-        if not blueprint:
-             blueprint = {
-                 "initial_water_level": 0.5, "initial_water_speed": 0.2,
-                 "hills": [{"x":15, "y":15, "peak_altitude":8.0, "spread":1.5}], 
-                 "city_centers": [{"x":5, "y":5}], "survivors": []
-             }
-             print("AI failed, falling back to default.")
-
-        # NEW: Pull dynamic weather settings from Gemini!
-        self.global_water_level = blueprint.get("initial_water_level", 0.5)
-        self.water_speed = blueprint.get("initial_water_speed", 0.2)
-
-        database.log_action("SYSTEM", f"SCENARIO INITIALIZED. Starting Water Level: {self.global_water_level:.2f}m")
-
-        hills = blueprint.get("hills", [])
-        city_centers = [(c["x"], c["y"]) for c in blueprint.get("city_centers", [])]
-        ai_survivors = blueprint.get("survivors", [])
-
-        # Build the grid using the AI blueprint rules
-        terrain_id = 0
-        for x in range(self.width):
-            for y in range(self.height):
+        map_data = config.get("map_data")
+        if map_data:
+            cells = map_data.get("cells", [])
+            blueprint_dict = map_data.get("blueprint", {})
+            ai_survivors = blueprint_dict.get("survivors", [])
+        else:
+            # Fallback to generating on the fly
+            scenario_prompt = config.get("scenario", "")
+            if not scenario_prompt:
+                themes = [
+                    "A dense downtown commercial district.",
+                    "A tight-knit suburban neighborhood clustered in a valley.",
+                    "An industrial warehouse district with large number of buildings grouped together.",
+                    "A coastal urban center with dense housing",
+                    "A mixed urban layout with clusters of residential buildings."
+                ]
+                scenario_prompt = random.choice(themes)
                 
-                # Base Camp is now an indestructible 150m high platform
-                if x == 9 and y == 9:
-                    altitude = 150.0
-                    is_ob = False
-                    t_type = "terrain"
-                else:
-                    altitude = 1.0 
-                    for hill in hills:
-                        hx, hy = hill.get("x", 10), hill.get("y", 10)
-                        h_max = hill.get("peak_altitude", 40.0) # Hills are much taller
-                        h_spread = hill.get("spread", 1.5)
-                        
-                        dist = math.sqrt((x - hx)**2 + (y - hy)**2)
-                        hill_height = h_max - (dist * h_spread)
-                        if hill_height > altitude:
-                            altitude = hill_height
-                            
-                    altitude += random.uniform(-0.5, 0.5)
-                    altitude = max(1.0, altitude) 
-                    
-                    closest_city = min([math.sqrt((x - cx)**2 + (y - cy)**2) for cx, cy in city_centers]) if city_centers else 10
-                    
-                    t_type = "terrain"
-                    if closest_city < 5.0 and altitude < 20.0:
-                        if random.random() < 0.75:
-                            t_type = "building"
-                            # Skyscrapers in the city! (20m to 80m tall)
-                            altitude += random.uniform(20.0, 80.0) 
-                    else:
-                        if random.random() < 0.05 and altitude < 30.0:
-                            t_type = "building"
-                            # Suburban/Rural buildings (5m to 20m tall)
-                            altitude += random.uniform(5.0, 20.0)
+            blueprint = map_generator.generate_semantic_blueprint(scenario_prompt, num_survivors)
+            cells = map_generator.build_terrain_matrix(blueprint, obstacle_prob, self.width, self.height)
+            ai_survivors = [{"x": s.x, "y": s.y} for s in blueprint.survivors] if blueprint else []
 
-                    is_ob = random.random() < obstacle_prob 
+        # Build the grid using the cells
+        terrain_id = 0
+        
+        for cell_data in cells:
+            x, y = cell_data["x"], cell_data["y"]
+            altitude = cell_data["altitude"]
+            is_ob = cell_data["is_obstacle"]
+            t_type = cell_data["terrain_type"]
 
-                cell = TerrainAgent(f"terrain_{terrain_id}", self, altitude, is_ob, t_type)
-                self.grid.place_agent(cell, (x, y))
-                self.schedule.add(cell)
-                terrain_id += 1
+            cell = TerrainAgent(f"terrain_{terrain_id}", self, altitude, is_ob, t_type)
+            self.grid.place_agent(cell, (x, y))
+            self.schedule.add(cell)
+            terrain_id += 1
 
         for i in range(num_drones):
             self.spawn_drone(f"drone_{i+1}", 9, 9, start_battery)
@@ -239,21 +185,7 @@ class DisasterZoneModel(Model):
 
         # 2. NORMAL PHYSICS TICK (Only runs if mission is NOT complete)
         self.tick_count += 1
-        
-        # NEW: The water only physically rises once every 5 seconds
-        if self.tick_count % 5 == 0:
-            self.global_water_level += self.water_speed
-        
-        # EVERY 10 SECONDS: Proportional weather shift!
-        if self.tick_count % 10 == 0:
-            multiplier = random.uniform(0.9, 1.3) 
-            self.water_speed = self.water_speed * multiplier
-            self.water_speed = min(0.15, self.water_speed) 
-            
-            database.log_action("SYSTEM", f"WEATHER ALERT: {self.flood_type} intensity shifted. New speed: {self.water_speed:.4f}m/tick")
-
         self.schedule.step() 
-        database.update_environment(self.global_water_level, self.water_speed)
         self.sync_terrain_to_db()
 
 # ==========================================
@@ -270,15 +202,20 @@ def _run_sim_loop():
             sim_world.step()
         time.sleep(1.0) # Tick every 1 second
 
-def initialize_world(config=None):
-    global sim_world, sim_running
+def initialize_world(config=None, start_sim=True):
+    global sim_world
     
     sim_world = DisasterZoneModel(config)
     
-    # Start the heartbeat thread if it isn't running already
+    # Start the heartbeat thread if requested
+    if start_sim:
+        start_sim_thread()
+        
+    return sim_world
+
+def start_sim_thread():
+    global sim_running
     if not sim_running:
         sim_running = True
         t = threading.Thread(target=_run_sim_loop, daemon=True)
         t.start()
-        
-    return sim_world

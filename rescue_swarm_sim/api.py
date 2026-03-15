@@ -22,39 +22,72 @@ app.add_middleware(
 # ==========================================
 # 1. PYDANTIC MODELS (Validates UI Inputs)
 # ==========================================
+from typing import Optional, Dict, Any
+
 class SimulationConfig(BaseModel):
-    scenario: str = "A dense residential area near a steep hill."
-    flood_type: str = "Flash Flood"  # NEW: The flood physics category!
-    
+    scenario: str = ""
     num_drones: int = 2
     drone_battery: int = 100
     num_survivors: int = 5
     obstacle_difficulty: str = "med"  
     sim_difficulty: str = "easy"
+    map_data: Optional[Dict[str, Any]] = None
 
 # ==========================================
 # 2. POST ENDPOINT (Starts the Simulation)
 # ==========================================
+@app.post("/api/generate_map")
+def generate_map(config: SimulationConfig):
+    """Generates the map and returns it to the client for preview."""
+    import random
+    import map_generator
+    
+    scenario_prompt = config.scenario
+    if not scenario_prompt:
+        themes = [
+            "A dense downtown commercial district.",
+            "A tight-knit suburban neighborhood clustered in a valley.",
+            "An industrial warehouse district with large number of buildings grouped together.",
+            "A coastal urban center with dense housing",
+            "A mixed urban layout with clusters of residential buildings."
+        ]
+        scenario_prompt = random.choice(themes)
+
+    print(f"Generating Map Config: {scenario_prompt}")
+    blueprint = map_generator.generate_semantic_blueprint(scenario_prompt, config.num_survivors)
+    
+    if blueprint is None:
+        return {"status": "error", "message": "Failed to generate AI map."}
+
+    obstacle_diff = config.obstacle_difficulty
+    if obstacle_diff == "high": obstacle_prob = 0.25
+    elif obstacle_diff == "low": obstacle_prob = 0.05
+    else: obstacle_prob = 0.15
+
+    cells = map_generator.build_terrain_matrix(blueprint, obstacle_prob, 20, 20)
+    
+    map_data = {
+        "blueprint": blueprint.model_dump() if hasattr(blueprint, 'model_dump') else blueprint.dict(),
+        "cells": cells,
+        "scenario": scenario_prompt
+    }
+    return {"status": "success", "message": "Map generated.", "map_data": map_data}
+
 @app.post("/api/start_mission")
 def start_mission(config: SimulationConfig):
-    """Receives the UI configuration and boots the dynamic Mesa engine."""
-    config_dict = config.dict()
-    
-    print(f"Booting Swarm Nexus with {config.num_drones} drones on a fixed 20x20 grid...")
-    print(f"AI Scenario: {config.scenario}")
-    print(f"Difficulty: {config.sim_difficulty} | Obstacles: {config.obstacle_difficulty}")
-    
-    # Initialize the physics engine with the custom rules
-    simulation.initialize_world(config_dict)
-    
+    """Receives the deploy signal and boots up the background engine."""
+    simulation.initialize_world(config.dict(), start_sim=True)
+        
     return {
         "status": "success", 
-        "message": "Environment generated. Awaiting AI Swarm Commands."
+        "message": "Simulation Running."
     }
 
 # ==========================================
 # 3. GET ENDPOINT (Broadcasts the Live World)
 # ==========================================
+
+# we are going to use websocket / webhook
 @app.get("/state")
 def get_world_state():
     """Returns the live state of the drones, terrain, and survivors as JSON."""
@@ -99,26 +132,9 @@ def get_world_state():
         # Grid is fixed to 20x20
         grid_w, grid_h = 20, 20
             
-        # 4. Fetch the 15 most recent logs
-        cursor.execute("SELECT timestamp, drone_id, message FROM logs ORDER BY id DESC LIMIT 15")
-        logs = [
-            {"time": row[0], "drone": row[1], "message": row[2]} 
-            for row in cursor.fetchall()
-        ]
-
-        # 5. Fetch live environment data directly from the new SQLite table
-        try:
-            cursor.execute("SELECT global_water_level, water_speed FROM environment WHERE id=1")
-            env_row = cursor.fetchone()
-            if env_row:
-                env_data = {
-                    "global_water_level": env_row[0],
-                    "water_speed": env_row[1]
-                }
-            else:
-                env_data = {"global_water_level": 0.0, "water_speed": 0.0}
-        except sqlite3.OperationalError:
-            env_data = {"global_water_level": 0.0, "water_speed": 0.0}
+        # 4. Fetch logs (limit 50 recent)
+        cursor.execute("SELECT timestamp, drone_id, message FROM logs ORDER BY id DESC LIMIT 50")
+        logs = [{"time": row[0], "drone": row[1], "message": row[2]} for row in cursor.fetchall()]
 
         conn.close()
         
@@ -127,8 +143,7 @@ def get_world_state():
             "terrain": terrain,
             "drones": drones,
             "survivors": survivors,
-            "logs": logs,
-            "environment": env_data
+            "logs": logs
         }
     except Exception as e:
         return {"error": str(e)}

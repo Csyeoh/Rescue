@@ -5,7 +5,6 @@ import os
 
 import database
 import ai_tools
-import tasks
 from autopilot import autopilot_tick
 
 def _log_system(message: str):

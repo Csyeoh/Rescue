@@ -57,8 +57,8 @@ def build_agents():
 
     terrain_analyst = Agent(
         role="Geospatial Data Analyst",
-        goal="Determine areas of the fastest flooding based on the 'Answer Plane' (known altitude) and current water level.",
-        backstory="You are a GIS analyst mapping disaster contours. You identify bounding boxes covering high-risk lowlands.",
+        goal="Determine areas of challenging terrain based on the 'Answer Plane' (known altitude).",
+        backstory="You are a GIS analyst mapping disaster contours. You identify bounding boxes covering difficult terrain.",
         llm=llm,
         tools=tools,
         allow_delegation=False,

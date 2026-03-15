@@ -92,16 +92,7 @@ def init_db():
             PRIMARY KEY (x, y)
         )
     ''')
-    
-    # 3. ENVIRONMENT TABLE (New!)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS environment (
-            id INTEGER PRIMARY KEY CHECK (id = 1),
-            global_water_level REAL,
-            water_speed REAL
-        )
-    ''')
-    
+
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS survivors (
             survivor_id TEXT PRIMARY KEY,
@@ -184,32 +175,6 @@ def sync_terrain(terrain_data):
                 VALUES (?, ?, ?, ?, ?)
             ''', a_plane_data)
             
-            conn.commit()
-        finally:
-            conn.close()
-    return _with_retry(op)
-
-def update_environment(water_level, water_speed):
-    """Saves the global water physics to the database."""
-    def op():
-        conn = _connect()
-        try:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO environment (id, global_water_level, water_speed)
-                VALUES (1, ?, ?)
-            ''', (water_level, water_speed))
-            conn.commit()
-        finally:
-            conn.close()
-    return _with_retry(op)
-
-def update_drone_state(drone_id, x, y, battery):
-    def op():
-        conn = _connect()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (x, y, battery, drone_id))
             conn.commit()
         finally:
             conn.close()

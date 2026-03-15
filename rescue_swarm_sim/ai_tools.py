@@ -13,7 +13,7 @@ except Exception:  # pragma: no cover
 # We no longer need A* or full grids. The AI purely works on high-level zones.
 
 def get_terrain_map() -> str:
-    """Returns the known map (altitude, terrain type) and water level without obstacles."""
+    """Returns the known map (altitude, terrain type) without obstacles."""
     return mcp_server.get_known_map()
 
 def get_drone_status() -> Dict[str, Any]:
@@ -113,7 +113,7 @@ assign_waypoints_tool = None
 if crewai_tool:
     @crewai_tool("get_terrain_map")
     def get_terrain_map_tool() -> str:
-        """Read the global water level and known map altitudes (excluding hidden obstacles and survivors)."""
+        """Read the known map altitudes (excluding hidden obstacles and survivors)."""
         return get_terrain_map()
 
     @crewai_tool("get_drone_status")
