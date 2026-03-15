@@ -31,6 +31,13 @@ def _a_star_path(start: Tuple[int, int], target: Tuple[int, int], obstacles: Set
     g_score = {start: 0}
     visited = set()
 
+    # Fetch the scanned memory map to build the Fog of War penalty!
+    conn = database._connect()
+    c = conn.cursor()
+    c.execute("SELECT x, y FROM answer_plane WHERE is_scanned=1")
+    scanned_tiles = {(row[0], row[1]) for row in c.fetchall()}
+    conn.close()
+
     while open_heap:
         _, current_g, current = heapq.heappop(open_heap)
         
@@ -56,7 +63,12 @@ def _a_star_path(start: Tuple[int, int], target: Tuple[int, int], obstacles: Set
             if (nx, ny) in obstacles:
                 continue
                 
-            tentative_g = current_g + 1
+            # EXPLORATION URGE: Add a heavy +5 cost penalty if the tile has ALREADY been scanned!
+            # This causes the A* algorithm to prioritize flying through unknown "Fog of War" 
+            # instead of backtracking through cleared territory.
+            movement_cost = 6 if (nx, ny) in scanned_tiles else 1
+            tentative_g = current_g + movement_cost
+            
             if (nx, ny) not in g_score or tentative_g < g_score[(nx, ny)]:
                 came_from[(nx, ny)] = current
                 g_score[(nx, ny)] = tentative_g
@@ -75,24 +87,26 @@ def autopilot_tick():
     drones = cursor.fetchall()
     
     # Get known obstacles
-    obstacles = _read_obstacle_set(conn)
-    for dx, dy, _bat, _d_id in drones: # No wait, format is d_id, dx, dy, bat
-        obstacles.add((dx, dy))
+    static_obstacles = _read_obstacle_set(conn)
+    dynamic_obstacles = set(static_obstacles)
+    for _d_id, dx, dy, _bat in drones:
+        dynamic_obstacles.add((dx, dy))
 
     conn.close()
 
     for d_id, dx, dy, bat in drones:
         # 1. Evaluate Return to Base logic (Bingo Fuel)
         curr_pos = (dx, dy)
-        path_to_base = _a_star_path(curr_pos, BASE_CAMP, obstacles - {curr_pos, BASE_CAMP})
+        path_to_base_static = _a_star_path(curr_pos, BASE_CAMP, static_obstacles - {curr_pos, BASE_CAMP})
         
-        distance_to_base = len(path_to_base) if path_to_base else _heuristic(*curr_pos, *BASE_CAMP)
+        distance_to_base = len(path_to_base_static) if path_to_base_static else _heuristic(*curr_pos, *BASE_CAMP)
         battery_req_for_return = distance_to_base * 2
         
         # Are we dangerously low? (Reserve must be >= 10%)
         if curr_pos != BASE_CAMP and (bat - battery_req_for_return <= 12):
-            if path_to_base:
-                next_step = path_to_base[0]
+            path_to_base_dynamic = _a_star_path(curr_pos, BASE_CAMP, dynamic_obstacles - {curr_pos, BASE_CAMP})
+            if path_to_base_dynamic:
+                next_step = path_to_base_dynamic[0]
                 _execute_and_scan(d_id, next_step[0], next_step[1])
             else:
                 database.log_action(d_id, "CRITICAL: Path to base is blocked and battery is low!")
@@ -113,31 +127,61 @@ def autopilot_tick():
         
         if curr_pos == target:
             # Reached waypoint natively (or spawned on it), mark as done
-            c.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (d_id, seq))
-            conn.commit()
             conn.close()
+            with database.DB_WRITE_LOCK:
+                conn2 = database._connect()
+                conn2.cursor().execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (d_id, seq))
+                conn2.commit()
+                conn2.close()
             continue
             
         conn.close()
         
+        # 2.5 Dynamic Fog of War Skip
+        # Check if the waypoint has ALREADY been scanned by any drone
+        c = database._connect().cursor()
+        c.execute("SELECT is_scanned FROM answer_plane WHERE x=? AND y=?", (target_x, target_y))
+        scan_state = c.fetchone()
+        
+        if scan_state and scan_state[0] == 1:
+            # Waypoint was already cleared! Skip it to save time!
+            with database.DB_WRITE_LOCK:
+                conn = database._connect()
+                conn.cursor().execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (d_id, seq))
+                conn.commit()
+                conn.close()
+            continue
+            
+        if target in static_obstacles:
+            # Target is a known physical obstacle, skip it!
+            with database.DB_WRITE_LOCK:
+                conn = database._connect()
+                conn.cursor().execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (d_id, seq))
+                conn.cursor().execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (d_id, f"WARNING: Waypoint ({target[0]},{target[1]}) is an obstacle. Skipping."))
+                conn.commit()
+                conn.close()
+            continue
+            
         # 3. Pathfind to waypoint
-        path = _a_star_path(curr_pos, target, obstacles - {curr_pos, target})
+        path = _a_star_path(curr_pos, target, dynamic_obstacles - {curr_pos, target})
         if path:
             next_step = path[0]
             success = _execute_and_scan(d_id, next_step[0], next_step[1])
             if success and next_step == target:
                 # We reached the waypoint target this exact tick, mark it done
-                conn = database._connect()
-                conn.cursor().execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (d_id, seq))
-                conn.commit()
-                conn.close()
+                with database.DB_WRITE_LOCK:
+                    conn = database._connect()
+                    conn.cursor().execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (d_id, seq))
+                    conn.commit()
+                    conn.close()
         else:
             # Unreachable due to physical boundaries, skip waypoint
-            conn = database._connect()
-            conn.cursor().execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (d_id, seq))
-            database.log_action(d_id, f"WARNING: Waypoint ({target[0]},{target[1]}) is unreachable. Skipping.")
-            conn.commit()
-            conn.close()
+            with database.DB_WRITE_LOCK:
+                conn = database._connect()
+                conn.cursor().execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (d_id, seq))
+                conn.cursor().execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (d_id, f"WARNING: Waypoint ({target[0]},{target[1]}) is unreachable. Skipping."))
+                conn.commit()
+                conn.close()
 
 def _execute_and_scan(drone_id: str, nx: int, ny: int) -> bool:
     msg = mcp_server.move_drone(drone_id, nx, ny)

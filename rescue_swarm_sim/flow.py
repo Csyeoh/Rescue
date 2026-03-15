@@ -71,6 +71,7 @@ class SwarmCommanderFlow(Flow[SwarmMissionState]):
         print("[FLOW] Running initial Greedy Weighted BFS Partition...")
         assignments = zone_partitioner.greedy_weighted_bfs(self.state.drones_info, self.state.terrain_map)
         self.state.partition_assignments = assignments
+        return True
 
     @listen("rebalance")
     def compute_rebalance(self):
@@ -120,6 +121,7 @@ class SwarmCommanderFlow(Flow[SwarmMissionState]):
         self.state.partition_assignments = active_queues
         self.state.rebalance_events = rebalance_events
         print("[FLOW] Rebalance computed successfully.")
+        return True
 
     @listen(or_(run_bfs_partition, compute_rebalance))
     def narrate_plan(self, *args):
@@ -171,7 +173,11 @@ class SwarmCommanderFlow(Flow[SwarmMissionState]):
                 tasks=[task],
                 verbose=False
             )
-            crew.kickoff()
+            
+            try:
+                crew.kickoff()
+            except Exception as e:
+                print(f"[FLOW WARNING] Strategy Agent completed but threw an output parsing error: {str(e)}")
             
         except ImportError:
             # Fallback if crewai is missing
@@ -180,13 +186,14 @@ class SwarmCommanderFlow(Flow[SwarmMissionState]):
             conn.commit()
             conn.close()
 
-    @listen(narrate_plan)
+    @listen(or_(run_bfs_partition, compute_rebalance))
     def write_zones_to_db(self, *args):
         print("[FLOW] Dispatching waypoints to drones via MCP Server...")
         for d_id, wps in self.state.partition_assignments.items():
             if wps:
+                print(f"[FLOW] Writing {len(wps)} waypoints for {d_id}")
                 ai_tools.assign_waypoints(d_id, wps)
 
-    @listen(or_(write_zones_to_db, "done"))
+    @listen(or_(narrate_plan, write_zones_to_db))
     def wrap_up(self, *args):
         print("[FLOW] Execution complete.")

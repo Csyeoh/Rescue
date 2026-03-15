@@ -13,9 +13,10 @@ except ImportError:
     ChatGoogleGenerativeAI = None
 
 try:
-    from crewai import Agent
-except Exception as e:  # pragma: no cover
+    from crewai import Agent, LLM
+except Exception as e:
     Agent = None
+    LLM = None
     _CREWAI_IMPORT_ERROR = e
 
 import ai_tools
@@ -28,10 +29,24 @@ import ai_tools
 def build_llm():
     load_dotenv()
     
+    use_local = os.getenv("USE_LOCAL_LLM", "false").lower() == "true"
+    local_model = os.getenv("LOCAL_MODEL", "ollama/llama3.1")
+    
+    if use_local:
+        if LLM is None:
+            raise RuntimeError("crewai.LLM failed to import.")
+            
+        print(f"[LLM] Using Local Model → {local_model}")
+        return LLM(
+            model=local_model,
+            base_url=os.getenv("OLLAMA_API_BASE", "http://localhost:11434"),
+            temperature=0.1
+        )
+
     # Enforce Google API Key usage
     google_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not google_key:
-        raise ValueError("No GEMINI_API_KEY found in .env file.")
+        raise ValueError("No GEMINI_API_KEY found in .env file (and USE_LOCAL_LLM is false).")
     
     os.environ["GOOGLE_API_KEY"] = google_key
     

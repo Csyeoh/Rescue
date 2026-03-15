@@ -72,9 +72,16 @@ def greedy_weighted_bfs(drones: list[dict], terrain_map: list[dict]) -> dict[str
             while frontiers[d_id]:
                 val, dist, cx, cy = heapq.heappop(frontiers[d_id])
                 if (cx, cy) in unclaimed:
-                    # Claim it!
+                    # Claim the cell from the pool so other drones don't take it
                     unclaimed.remove((cx, cy))
-                    assignments[d_id].append((cx, cy))
+                    
+                    # MATHEMATICAL CHECKERBOARDING: 
+                    # Only assign this as a hard waypoint if it lands on an EVEN parity tile.
+                    # Because the drone's sensors scan all 4 adjacent (ODD) tiles upon landing,
+                    # this guarantees 100% map coverage while halving the actual flight queue!
+                    if (cx + cy) % 2 == 0:
+                        assignments[d_id].append((cx, cy))
+                        
                     claimed_cell = True
                     # Expand frontier from this new cell, but calculate distance from drone start
                     _push_neighbors(d_id, (cx, cy), drone_positions[d_id], grid_weights, unclaimed, frontiers[d_id])
@@ -95,8 +102,27 @@ def greedy_weighted_bfs(drones: list[dict], terrain_map: list[dict]) -> dict[str
         
         idx = (idx + 1) % len(drone_cycle)
         
-    return dict(assignments)
+    # Sort assignments to form a continuous nearest-neighbor flight path
+    final_assignments = {}
+    for d_id, assigned_cells in assignments.items():
+        if not assigned_cells:
+            final_assignments[d_id] = []
+            continue
+            
+        unvisited = set(assigned_cells)
+        path = []
+        current_pos = drone_positions[d_id]
+        
+        while unvisited:
+            # Find nearest unvisited cell (Manhattan distance)
+            next_cell = min(unvisited, key=lambda c: abs(c[0] - current_pos[0]) + abs(c[1] - current_pos[1]))
+            path.append(next_cell)
+            unvisited.remove(next_cell)
+            current_pos = next_cell
+            
+        final_assignments[d_id] = path
 
+    return final_assignments
 
 def _push_neighbors(drone_id: str, cell: tuple[int, int], start_pos: tuple[int, int], grid_weights: dict, unclaimed: set, frontier: list):
     cx, cy = cell

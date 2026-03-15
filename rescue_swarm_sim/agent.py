@@ -37,6 +37,25 @@ def run_swarm_commander():
 
     while True:
         try:
+            # ── PHASE 0: Check Win Condition ─
+            conn = database._connect()
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*), SUM(is_discovered) FROM survivors")
+            row = c.fetchone()
+            conn.close()
+
+            mission_complete = False
+            if row:
+                total_s = row[0]
+                found_s = row[1] if row[1] is not None else 0
+                if total_s > 0 and total_s == found_s:
+                    mission_complete = True
+
+            if mission_complete:
+                # Drones enter standby mode, simply wait.
+                time.sleep(1.0)
+                continue
+
             # ── PHASE 1: Deterministic Autopilot (always runs, never blocked) ─
             autopilot_tick()
 

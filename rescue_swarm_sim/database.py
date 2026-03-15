@@ -89,6 +89,7 @@ def init_db():
             altitude REAL,
             terrain_type TEXT,
             obstacle_discovered INTEGER DEFAULT 0,
+            is_scanned INTEGER DEFAULT 0,
             PRIMARY KEY (x, y)
         )
     ''')
@@ -160,7 +161,7 @@ def sync_terrain(terrain_data):
             
             # Extract just what is needed for the two planes
             q_plane_data = [(r[0], r[1], r[2], r[3], r[4]) for r in terrain_data] 
-            a_plane_data = [(r[0], r[1], r[2], r[4], r[5]) for r in terrain_data]
+            a_plane_data = [(r[0], r[1], r[2], r[4], r[5], 0) for r in terrain_data] # adding 0 for is_scanned
             
             # Ground truth gets EVERYTHING
             cursor.executemany('''
@@ -169,10 +170,10 @@ def sync_terrain(terrain_data):
             ''', q_plane_data)
             
             # Discovered map ONLY gets altitude and type (is_obstacle is stripped out!)
-            # Once seeded, the simulation NEVER updates this table again. Only MCP sensors update it.
+            # Once seeded, the simulation NEVER updates this table again. ONLY inserts missing rows!
             cursor.executemany('''
-                INSERT OR REPLACE INTO answer_plane (x, y, altitude, terrain_type, obstacle_discovered)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO answer_plane (x, y, altitude, terrain_type, obstacle_discovered, is_scanned)
+                VALUES (?, ?, ?, ?, ?, ?)
             ''', a_plane_data)
             
             conn.commit()

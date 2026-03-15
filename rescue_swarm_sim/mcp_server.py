@@ -99,6 +99,9 @@ def move_drone(drone_id: str, x: int, y: int) -> str:
         # 3. Process the successful move
         new_battery = 100 if (x == 9 and y == 9) else battery - 2
         cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (x, y, new_battery, drone_id))
+        
+        # Mark the current tile as scanned physically
+        cursor.execute("UPDATE answer_plane SET is_scanned = 1 WHERE x=? AND y=?", (x, y))
 
         # 4. PASSIVE SENSORS: Check the 4 adjacent grids (Up, Down, Left, Right)
         adjacent_coords = [(x, y-1), (x, y+1), (x-1, y), (x+1, y)]
@@ -116,7 +119,13 @@ def move_drone(drone_id: str, x: int, y: int) -> str:
                 if a_row and a_row[0] == 0:
                     detected_obstacles.append((ax, ay))
                     # Instantly map it so the UI draws it and the AI knows it's there!
-                    cursor.execute("UPDATE answer_plane SET obstacle_discovered = 1 WHERE x = ? AND y = ?", (ax, ay))
+                    cursor.execute("UPDATE answer_plane SET obstacle_discovered = 1, is_scanned = 1 WHERE x = ? AND y = ?", (ax, ay))
+                else:
+                    # Still mark it as scanned even if it was already discovered or empty
+                    cursor.execute("UPDATE answer_plane SET is_scanned = 1 WHERE x = ? AND y = ?", (ax, ay))
+            else:
+                 # Mark empty adjacent tiles as scanned
+                 cursor.execute("UPDATE answer_plane SET is_scanned = 1 WHERE x = ? AND y = ?", (ax, ay))
 
         # --- SENSOR B: Thermal Aura (Survivors) ---
         thermal_alert = False
@@ -154,8 +163,8 @@ def move_drone(drone_id: str, x: int, y: int) -> str:
 @mcp.tool()
 def thermal_scan(drone_id: str) -> str:
     """
-    Performs a high-powered thermal scan at the drone's EXACT current (x, y) location.
-    Returns a message indicating if a hidden survivor was found on this specific grid square.
+    Performs a high-powered thermal scan at the drone's current location AND 4 adjacent grids.
+    Returns a message indicating if a hidden survivor was found.
     """
     conn = database._connect()
     cursor = conn.cursor()
@@ -168,24 +177,34 @@ def thermal_scan(drone_id: str) -> str:
         return f"Error: {drone_id} not found."
     
     dx, dy = drone_loc
+    scan_coords = [(dx, dy), (dx-1, dy), (dx+1, dy), (dx, dy-1), (dx, dy+1)]
     
-    cursor.execute("SELECT survivor_id, is_discovered FROM survivors WHERE x=? AND y=?", (dx, dy))
-    survivor = cursor.fetchone()
+    found_messages = []
+    already_rescued = False
     
-    if survivor:
-        survivor_id, is_discovered = survivor
-        if not is_discovered:
-            cursor.execute("UPDATE survivors SET is_discovered=1 WHERE survivor_id=?", (survivor_id,))
-            database.log_action(drone_id, f"URGENT: Thermal match! Discovered {survivor_id} at ({dx}, {dy})!")
-            conn.commit()
-            conn.close()
-            return f"SUCCESS: Thermal signature detected! {survivor_id} found and logged."
-        else:
-            conn.close()
-            return "Thermal signature detected, but survivor is already marked as rescued."
+    for cx, cy in scan_coords:
+        cursor.execute("SELECT survivor_id, is_discovered FROM survivors WHERE x=? AND y=?", (cx, cy))
+        survivor = cursor.fetchone()
+        
+        if survivor:
+            survivor_id, is_discovered = survivor
+            if not is_discovered:
+                cursor.execute("UPDATE survivors SET is_discovered=1 WHERE survivor_id=?", (survivor_id,))
+                cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, f"URGENT: Thermal match! Discovered {survivor_id} at ({cx}, {cy})!"))
+                found_messages.append(survivor_id)
+            else:
+                already_rescued = True
     
+    conn.commit()
     conn.close()
-    return "Scan complete. No thermal signatures detected at this exact location."
+    
+    if found_messages:
+        return f"SUCCESS: Thermal signature detected! {', '.join(found_messages)} found and logged."
+    
+    if already_rescued:
+        return "Thermal signature detected, but survivor is already marked as rescued."
+        
+    return "Scan complete. No thermal signatures detected."
 
 @mcp.tool()
 def get_known_map() -> str:
