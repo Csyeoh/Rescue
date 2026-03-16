@@ -1,0 +1,6 @@
+{
+    "python.autoComplete.extraPaths": [
+        "./rescue_swarm_sim"
+    ],
+    "python.languageServer": "Pylance"
+}

@@ -57,15 +57,14 @@ def init_db():
     conn = _connect()
     cursor = conn.cursor()
     
-    # 1. DRONES TABLE (Upgraded with active and health status)
+    # 1. DRONES TABLE 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS drones (
             drone_id TEXT PRIMARY KEY,
             x INTEGER,
             y INTEGER,
             battery INTEGER,
-            is_active INTEGER,
-            health_status TEXT
+            status TEXT
         )
     ''')
     
@@ -75,6 +74,7 @@ def init_db():
             x INTEGER,
             y INTEGER,
             altitude REAL,
+            building_height REAL,
             is_obstacle INTEGER,
             terrain_type TEXT,
             PRIMARY KEY (x, y)
@@ -87,6 +87,7 @@ def init_db():
             x INTEGER,
             y INTEGER,
             altitude REAL,
+            building_height REAL,
             terrain_type TEXT,
             obstacle_discovered INTEGER DEFAULT 0,
             PRIMARY KEY (x, y)
@@ -111,15 +112,13 @@ def init_db():
         )
     ''')
     
-    # NEW table for bounding box assignments
+    # Updated table for cell-based sector assignments
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS drone_zones (
-            drone_id TEXT PRIMARY KEY,
-            x_min INTEGER,
-            x_max INTEGER,
-            y_min INTEGER,
-            y_max INTEGER,
-            is_complete INTEGER DEFAULT 0
+            drone_id TEXT,
+            x INTEGER,
+            y INTEGER,
+            PRIMARY KEY (drone_id, x, y)
         )
     ''')
     
@@ -151,7 +150,7 @@ def init_db():
 def sync_terrain(terrain_data):
     """
     Called by the simulation at spawn.
-    terrain_data format: (x, y, altitude, is_obstacle, terrain_type, obstacle_discovered)
+    terrain_data format: (x, y, altitude, building_height, is_obstacle, terrain_type, obstacle_discovered)
     """
     def op():
         conn = _connect()
@@ -159,22 +158,40 @@ def sync_terrain(terrain_data):
             cursor = conn.cursor()
             
             # Extract just what is needed for the two planes
-            q_plane_data = [(r[0], r[1], r[2], r[3], r[4]) for r in terrain_data] 
-            a_plane_data = [(r[0], r[1], r[2], r[4], r[5]) for r in terrain_data]
+            q_plane_data = [(r[0], r[1], r[2], r[3], r[4], r[5]) for r in terrain_data] 
+            a_plane_data = [(r[0], r[1], r[2], r[3], r[5], r[6]) for r in terrain_data]
             
             # Ground truth gets EVERYTHING
             cursor.executemany('''
-                INSERT OR REPLACE INTO question_plane (x, y, altitude, is_obstacle, terrain_type)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO question_plane (x, y, altitude, building_height, is_obstacle, terrain_type)
+                VALUES (?, ?, ?, ?, ?, ?)
             ''', q_plane_data)
             
             # Discovered map ONLY gets altitude and type (is_obstacle is stripped out!)
             # Once seeded, the simulation NEVER updates this table again. Only MCP sensors update it.
             cursor.executemany('''
-                INSERT OR REPLACE INTO answer_plane (x, y, altitude, terrain_type, obstacle_discovered)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT OR REPLACE INTO answer_plane (x, y, altitude, building_height, terrain_type, obstacle_discovered)
+                VALUES (?, ?, ?, ?, ?, ?)
             ''', a_plane_data)
             
+            conn.commit()
+        finally:
+            conn.close()
+    return _with_retry(op)
+
+def sync_drones(drone_data):
+    """
+    Called by the simulation to update drone positions and battery.
+    drone_data format: [(drone_id, x, y, battery, status)]
+    """
+    def op():
+        conn = _connect()
+        try:
+            cursor = conn.cursor()
+            cursor.executemany('''
+                UPDATE drones SET x = ?, y = ?, battery = ?, status = ?
+                WHERE drone_id = ?
+            ''', [(d[1], d[2], d[3], d[4], d[0]) for d in drone_data])
             conn.commit()
         finally:
             conn.close()

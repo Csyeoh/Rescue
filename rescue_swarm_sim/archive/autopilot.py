@@ -71,7 +71,7 @@ def autopilot_tick():
     cursor = conn.cursor()
     
     # Get drones
-    cursor.execute("SELECT drone_id, x, y, battery FROM drones WHERE is_active=1")
+    cursor.execute("SELECT drone_id, x, y, battery FROM drones")
     drones = cursor.fetchall()
     
     # Get known obstacles

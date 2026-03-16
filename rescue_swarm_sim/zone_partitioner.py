@@ -23,8 +23,7 @@ def greedy_weighted_bfs(drones: list[dict], terrain_map: list[dict]) -> dict[str
     
     Returns a dict mapping drone_id -> list of ordered (x, y) coordinates to visit.
     """
-    if not drones:
-        return {}
+    if not drones: return {}
 
     # Build grid weights mapping
     grid_weights = {}

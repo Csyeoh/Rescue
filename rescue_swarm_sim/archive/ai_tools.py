@@ -21,7 +21,7 @@ def get_drone_status() -> Dict[str, Any]:
     conn = database._connect()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT drone_id, x, y, battery FROM drones WHERE is_active=1")
+    cursor.execute("SELECT drone_id, x, y, battery FROM drones")
     drones_rows = cursor.fetchall()
 
     cursor.execute("SELECT drone_id, x_min, x_max, y_min, y_max, is_complete FROM drone_zones")
@@ -45,7 +45,7 @@ def get_idle_drones() -> list[str]:
     """Returns a list of drone IDs that have no remaining unvisited waypoints."""
     conn = database._connect()
     cursor = conn.cursor()
-    cursor.execute("SELECT drone_id FROM drones WHERE is_active=1")
+    cursor.execute("SELECT drone_id FROM drones")
     all_drones = [r[0] for r in cursor.fetchall()]
     
     idle = []

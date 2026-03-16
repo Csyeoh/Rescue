@@ -1,0 +1,13 @@
+[tool.poetry]
+name = "swarm_flow"
+version = "0.1.0"
+description = "CrewAI flow for rescue swarm simulation"
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.10.0,<3.13"
+crewai = "^0.83.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

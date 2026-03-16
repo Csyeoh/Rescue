@@ -1,0 +1,67 @@
+searching_task:
+  description: >
+    Execute the SEARCHING state logic for {drone_id}.
+    Check your battery by calling check_battery("{drone_id}").
+    Check your position by calling get_current_pos("{drone_id}").
+    Check your thermal signatures by calling get_thermal_memory("{drone_id}").
+    Check your priority cells by calling get_priority_list("{drone_id}").
+
+    Logic:
+    - IF you have coordinates in your thermal_memory: This overrides all priorities! Move directly towards the thermal memory coordinates.
+    - Otherwise, check your battery against the cost of returning to base. If you are at the point of no return (Battery equals exact cost to return + 2%), IMMEDIATELY select RETURNING action and move_drone() towards base.
+    - If battery is safe: call move_drone() 1 step towards the highest priority cell in your list.
+    - Once you arrive at the cell, if it has not been registered as discovered, perform a thermal_scan("{drone_id}").
+    - Call mark_cell_discovered() with the cell you just scanned to clean it from the memory lists globally.
+
+    You must output exactly ONE decisive action tool call, and then format your output according to the pydantic structure provided.
+  expected_output: >
+    A fully populated DroneIntent detailing your tool call, rationale, and any status change.
+  agent: search_and_rescue_drone
+  async_execution: true
+
+charging_task:
+  description: >
+    Execute the CHARGING state logic for {drone_id}.
+    Check your battery by calling check_battery("{drone_id}").
+    Check your priority cells by calling get_priority_list("{drone_id}").
+
+    Logic:
+    - Inspect your priority cells list.
+    - If you have cells: calculate if `current_battery` >= (cost_to_go_to_cell + cost_to_return_from_cell + buffer).
+        - If Yes: output action to status SEARCHING and a move_drone() towards the cell.
+        - If No: Continue charging. Output action "CONTINUE CHARGING".
+    - If you don't have cells: Just output action "CONTINUE CHARGING - AWAITING REBALANCE".
+  expected_output: >
+    A fully populated DroneIntent detailing your tool call, rationale, and any status change.
+  agent: search_and_rescue_drone
+  async_execution: true
+
+returning_task:
+  description: >
+    Execute the RETURNING state logic for {drone_id}.
+    Check your position by calling get_current_pos("{drone_id}").
+
+    Logic:
+    - Compute the delta to the Base Pos (9, 9).
+    - If you are at Base Pos, output action to change status to CHARGING.
+    - Otherwise, output action to move_drone() 1 step closer to Base Pos.
+  expected_output: >
+    A fully populated DroneIntent detailing your tool call, rationale, and any status change.
+  agent: search_and_rescue_drone
+  async_execution: true
+
+idle_task:
+  description: >
+    Execute the IDLE state logic for {drone_id}.
+    Check your battery by calling check_battery("{drone_id}").
+    Check your priority cells by calling get_priority_list("{drone_id}").
+
+    Logic:
+    - Inspect your priority cells list.
+    - Calculate if you have enough battery to reach it AND return to base (+10% buffer).
+    - If Yes: Output action to change status to SEARCHING and move_drone() towards it.
+    - If no list exists: output action "IDLE - AWAITING REBALANCE".
+  expected_output: >
+    A fully populated DroneIntent detailing your tool call, rationale, and any status change.
+  agent: search_and_rescue_drone
+  async_execution: true

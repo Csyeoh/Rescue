@@ -10,9 +10,13 @@ def start_services():
     try:
         # 1. Start the FastAPI Backend (Simulation & Database API)
         print("--> Starting Python Simulation Backend (Port 8000)...")
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.getcwd()
+        
         backend_process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "api:app", "--port", "8000", "--no-access-log", "--log-level", "warning"],
-            cwd=os.getcwd() 
+            cwd=os.getcwd(),
+            env=env
         )
         processes.append(backend_process)
 
@@ -38,7 +42,7 @@ def start_services():
         # Once we build agent.py, uncomment these three lines to boot the AI automatically!
         
         print("--> Awakening AI Swarm Commander...")
-        ai_process = subprocess.Popen([sys.executable, "agent.py"], cwd=os.getcwd())
+        ai_process = subprocess.Popen([sys.executable, "agent.py"], cwd=os.getcwd(), env=env)
         processes.append(ai_process)
 
         print("\n✅ All systems nominal. Dashboard available at http://localhost:3000")
