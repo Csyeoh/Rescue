@@ -3,6 +3,7 @@ from mesa.space import MultiGrid
 from mesa.time import RandomActivation
 import time
 import threading
+import os
 
 class CellAgent(Agent):
     """A static agent representing the terrain/building properties of a cell."""
@@ -213,6 +214,55 @@ def resolve_intent(world: "DisasterZoneModel", intent: dict) -> dict:
             result["events"].append(f"GROUNDED: {drone.unique_id} battery too low")
             return result
 
+        from_pos = drone.pos
+        if not from_pos:
+            result["events"].append("ERROR: drone has no position")
+            return result
+
+        cx, cy = from_pos
+        pre_adjacent = [(cx, cy - 1), (cx, cy + 1), (cx - 1, cy), (cx + 1, cy)]
+        for ax, ay in pre_adjacent:
+            if 0 <= ax < world.width and 0 <= ay < world.height:
+                result["map_updates"].append({"x": ax, "y": ay, "discovered": True})
+                contents = world.grid.get_cell_list_contents([(ax, ay)])
+                survivor_present = any(isinstance(o, SurvivorAgent) and not o.found for o in contents)
+                if survivor_present:
+                    result["map_updates"].append({"x": ax, "y": ay, "survivor_detected": True})
+                    result["events"].append(f"SURVIVOR DETECTED adjacent at ({ax},{ay})")
+                for obj in contents:
+                    if isinstance(obj, CellAgent) and obj.is_obstacle and not obj.obstacle_discovered:
+                        obj.obstacle_discovered = True
+                        result["map_updates"].append({"x": ax, "y": ay, "obstacle_discovered": True})
+                    if isinstance(obj, CellAgent) and getattr(obj, "thermal_aura", False):
+                        sv_at = world.grid.get_cell_list_contents([(ax, ay)])
+                        already_found = any(isinstance(s, SurvivorAgent) and s.found for s in sv_at)
+                        if not already_found:
+                            result["map_updates"].append({"x": ax, "y": ay, "thermal_aura": True})
+                            if (ax, ay) not in drone.thermal_memory:
+                                drone.thermal_memory.append((ax, ay))
+                                result["events"].append(f"THERMAL ALERT at ({ax},{ay}) added to memory")
+        orig_tx, orig_ty = tx, ty
+        if abs(cx - tx) + abs(cy - ty) != 1:
+            candidates = []
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                nx, ny = cx + dx, cy + dy
+                if 0 <= nx < world.width and 0 <= ny < world.height:
+                    is_blocked = any(
+                        isinstance(o, CellAgent) and getattr(o, "is_obstacle", False)
+                        for o in world.grid.get_cell_list_contents([(nx, ny)])
+                    )
+                    if not is_blocked:
+                        dist = abs(nx - orig_tx) + abs(ny - orig_ty)
+                        candidates.append((dist, nx, ny))
+            if not candidates:
+                result["events"].append("ERROR: no valid adjacent move (surrounded)")
+                return result
+            candidates.sort(key=lambda t: t[0])
+            tx, ty = candidates[0][1], candidates[0][2]
+            result["events"].append(
+                f"WARN: non-adjacent MOVE requested to ({orig_tx},{orig_ty}); clamped to 1-step ({tx},{ty})"
+            )
+
         # Check obstacle
         for obj in world.grid.get_cell_list_contents([(tx, ty)]):
             if isinstance(obj, CellAgent) and getattr(obj, "is_obstacle", False):
@@ -221,7 +271,6 @@ def resolve_intent(world: "DisasterZoneModel", intent: dict) -> dict:
                 result["events"].append(f"BLOCKED: ({tx},{ty}) is an obstacle")
                 return result
 
-        from_pos = drone.pos
         result["from"] = {"x": from_pos[0], "y": from_pos[1]} if from_pos else None
 
         drone._apply_move((tx, ty))
@@ -238,21 +287,27 @@ def resolve_intent(world: "DisasterZoneModel", intent: dict) -> dict:
             result["new_status"] = "CHARGING"
             result["events"].append("Returned to base. Recharging to 100%.")
 
-        # Passive sensors — only report NEW discoveries
-        adjacent = [(tx, ty-1), (tx, ty+1), (tx-1, ty), (tx+1, ty)]
-        for ax, ay in adjacent:
+        post_adjacent = [(tx, ty - 1), (tx, ty + 1), (tx - 1, ty), (tx + 1, ty)]
+        for ax, ay in post_adjacent:
             if 0 <= ax < world.width and 0 <= ay < world.height:
+                result["map_updates"].append({"x": ax, "y": ay, "discovered": True})
                 contents = world.grid.get_cell_list_contents([(ax, ay)])
+                survivor_present = any(isinstance(o, SurvivorAgent) and not o.found for o in contents)
+                if survivor_present:
+                    result["map_updates"].append({"x": ax, "y": ay, "survivor_detected": True})
+                    result["events"].append(f"SURVIVOR DETECTED adjacent at ({ax},{ay})")
                 for obj in contents:
                     if isinstance(obj, CellAgent) and obj.is_obstacle and not obj.obstacle_discovered:
                         obj.obstacle_discovered = True
                         result["map_updates"].append({"x": ax, "y": ay, "obstacle_discovered": True})
-                    if getattr(obj, "thermal_aura", False):
+                    if isinstance(obj, CellAgent) and getattr(obj, "thermal_aura", False):
                         sv_at = world.grid.get_cell_list_contents([(ax, ay)])
                         already_found = any(isinstance(s, SurvivorAgent) and s.found for s in sv_at)
-                        if not already_found and (ax, ay) not in drone.thermal_memory:
-                            drone.thermal_memory.append((ax, ay))
-                            result["events"].append(f"THERMAL ALERT at ({ax},{ay}) added to memory")
+                        if not already_found:
+                            result["map_updates"].append({"x": ax, "y": ay, "thermal_aura": True})
+                            if (ax, ay) not in drone.thermal_memory:
+                                drone.thermal_memory.append((ax, ay))
+                                result["events"].append(f"THERMAL ALERT at ({ax},{ay}) added to memory")
 
         world.log_action(drone.unique_id, f"Moved from {from_pos} to ({tx},{ty}). Battery: {drone.battery}%")
         
@@ -294,6 +349,8 @@ def resolve_intent(world: "DisasterZoneModel", intent: dict) -> dict:
 
     elif action == "IDLE":
         result["events"].append(f"{drone.unique_id} is IDLE this tick.")
+    else:
+        result["events"].append(f"ERROR: unknown action '{action}' (expected MOVE/THERMAL_SCAN/RETURN_TO_BASE/CONTINUE_CHARGING/IDLE)")
 
     return result
 
@@ -307,10 +364,11 @@ sim_running = False
 def _run_sim_loop():
     """Continuously triggers the physics engine 1 time per second."""
     global sim_world, sim_running
+    tick_s = float(os.getenv("SIM_TICK_S", "1.0"))
     while sim_running:
         if sim_world:
             sim_world.step()
-        time.sleep(1.0) # Tick every 1 second
+        time.sleep(tick_s)
 
 def initialize_world(config=None, start_sim=True):
     global sim_world

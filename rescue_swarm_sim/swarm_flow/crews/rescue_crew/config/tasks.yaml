@@ -1,39 +1,42 @@
 searching_task:
   description: >
     Execute the SEARCHING state logic for {drone_id}. You must output exactly ONE decisive action.
+    IMPORTANT: action is an action verb (MOVE/THERMAL_SCAN/RETURN_TO_BASE/CONTINUE_CHARGING/IDLE). SEARCHING is a status and must go in new_status.
 
     STEP 1 — Perception:
-      - Call check_battery("{drone_id}") → current battery %
-      - Call get_distance_to_base("{drone_id}") → returns distance and safe_to_continue
-      - Call thermal_scan_preview("{drone_id}") → check if a survivor is under you RIGHT NOW
-      - Call get_thermal_memory("{drone_id}") → list of previously detected heat signals
+      - Call localhost_9001_mcp_check_battery("{drone_id}") → current battery %
+      - Call localhost_9001_mcp_get_distance_to_base("{drone_id}") → returns distance and safe_to_continue
+      - Call localhost_9001_mcp_get_current_pos("{drone_id}") → current (x, y). Use THIS to decide whether you are already at a target.
+      - Call localhost_9001_mcp_scan_adjacent("{drone_id}") → marks the 4 adjacent cells (obstacle / thermal aura / survivor detected). Do this before deciding any MOVE.
+      - Call localhost_9001_mcp_thermal_scan_preview("{drone_id}") → check if a survivor is under you RIGHT NOW
+      - Call localhost_9001_mcp_get_thermal_memory("{drone_id}") → list of previously detected heat signals
 
     STEP 2 — Safety Check:
       - If safe_to_continue is False:
         → Decision: Return home to avoid losing the drone.
-        → REQUIRED: Call submit_intent(drone_id="{drone_id}", action="RETURN_TO_BASE", target_x=9, target_y=9, new_status="RETURNING", rationale="...")
+        → REQUIRED: Call localhost_9001_mcp_submit_intent(drone_id="{drone_id}", action="RETURN_TO_BASE", target_x=9, target_y=9, new_status="RETURNING", rationale="...")
         → STOP here.
 
     STEP 3 — Prioritize Thermal Signals:
       - If thermal_memory has coordinates:
         → Pick the first (tx, ty).
-        → Call step_towards("{drone_id}", target_x=tx, target_y=ty) → (nx, ny).
-        → If at (tx, ty): Call submit_intent(drone_id="{drone_id}", action="THERMAL_SCAN", target_x=nx, target_y=ny, new_status="SEARCHING", rationale="...")
-        → Else: Call submit_intent(drone_id="{drone_id}", action="MOVE", target_x=nx, target_y=ny, new_status="SEARCHING", rationale="...")
+        → Call localhost_9001_mcp_step_towards("{drone_id}", target_x=tx, target_y=ty) → (nx, ny).
+        → If your current_pos is already (tx, ty): Call localhost_9001_mcp_submit_intent(drone_id="{drone_id}", action="THERMAL_SCAN", target_x=nx, target_y=ny, new_status="SEARCHING", rationale="...")
+        → Else: Call localhost_9001_mcp_submit_intent(drone_id="{drone_id}", action="MOVE", target_x=nx, target_y=ny, new_status="SEARCHING", rationale="...")
         → STOP here.
 
     STEP 4 — Search Waypoints:
-      - Call get_next_waypoint("{drone_id}") → returns has_waypoint, x, y
+      - Call localhost_9001_mcp_get_next_waypoint("{drone_id}") → returns has_waypoint, x, y
       - If has_waypoint is True:
-        → Call step_towards("{drone_id}", target_x=x, target_y=y) → (nx, ny).
-        → If at (x, y): Call submit_intent(drone_id="{drone_id}", action="THERMAL_SCAN", target_x=nx, target_y=ny, new_status="SEARCHING", rationale="...")
-        → Else: Call submit_intent(drone_id="{drone_id}", action="MOVE", target_x=nx, target_y=ny, new_status="SEARCHING", rationale="...")
+        → Call localhost_9001_mcp_step_towards("{drone_id}", target_x=x, target_y=y) → (nx, ny).
+        → If your current_pos is already (x, y): Call localhost_9001_mcp_submit_intent(drone_id="{drone_id}", action="THERMAL_SCAN", target_x=nx, target_y=ny, new_status="SEARCHING", rationale="...")
+        → Else: Call localhost_9001_mcp_submit_intent(drone_id="{drone_id}", action="MOVE", target_x=nx, target_y=ny, new_status="SEARCHING", rationale="...")
       - Else:
-        → Call submit_intent(drone_id="{drone_id}", action="IDLE", target_x=0, target_y=0, new_status="IDLE", rationale="...")
+        → Call localhost_9001_mcp_submit_intent(drone_id="{drone_id}", action="IDLE", target_x=0, target_y=0, new_status="IDLE", rationale="...")
 
-    FINAL REQUIREMENT: You MUST use the `submit_intent` tool to end your task.
+    FINAL REQUIREMENT: You MUST use the `localhost_9001_mcp_submit_intent` tool to end your task.
   expected_output: >
-    Execution of the `submit_intent` tool.
+    Execution of the `localhost_9001_mcp_submit_intent` tool.
   agent: search_and_rescue_drone
   async_execution: true
 
@@ -42,30 +45,30 @@ charging_task:
     Execute the CHARGING state logic for {drone_id}. Stay at (9,9) until battery safe.
     STEP 1: Check Battery and Waypoints.
     STEP 2: Compute round-trip.
-    STEP 3: If safe, Call submit_intent(..., action="MOVE", new_status="SEARCHING", ...).
-    STEP 4: Else, Call submit_intent(..., action="CONTINUE_CHARGING", new_status="CHARGING", ...).
+    STEP 3: If safe, Call localhost_9001_mcp_submit_intent(..., action="MOVE", new_status="SEARCHING", ...).
+    STEP 4: Else, Call localhost_9001_mcp_submit_intent(..., action="CONTINUE_CHARGING", new_status="CHARGING", ...).
   expected_output: >
-    Decision via `submit_intent`.
+    Decision via `localhost_9001_mcp_submit_intent`.
   agent: search_and_rescue_drone
   async_execution: true
 
 returning_task:
   description: >
     Execute the RETURNING logic for {drone_id}.
-    STEP 1: Call step_towards(..., target_x=9, target_y=9).
-    STEP 2: Call submit_intent(..., action="MOVE", target_x=nx, target_y=ny, new_status="RETURNING", ...).
+    STEP 1: Call localhost_9001_mcp_step_towards(..., target_x=9, target_y=9).
+    STEP 2: Call localhost_9001_mcp_submit_intent(..., action="MOVE", target_x=nx, target_y=ny, new_status="RETURNING", ...).
     If at base, set action="CONTINUE_CHARGING", new_status="CHARGING".
   expected_output: >
-    Decision via `submit_intent`.
+    Decision via `localhost_9001_mcp_submit_intent`.
   agent: search_and_rescue_drone
   async_execution: true
 
 idle_task:
   description: >
     Execute IDLE logic. Wait until waypoints appear.
-    If waypoints appear, Call submit_intent(..., action="MOVE", new_status="SEARCHING", ...).
-    Else, Call submit_intent(..., action="IDLE", ...).
+    If waypoints appear, Call localhost_9001_mcp_submit_intent(..., action="MOVE", new_status="SEARCHING", ...).
+    Else, Call localhost_9001_mcp_submit_intent(..., action="IDLE", ...).
   expected_output: >
-    Decision via `submit_intent`.
+    Decision via `localhost_9001_mcp_submit_intent`.
   agent: search_and_rescue_drone
   async_execution: true

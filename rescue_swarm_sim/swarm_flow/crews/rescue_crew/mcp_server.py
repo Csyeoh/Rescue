@@ -1,15 +1,13 @@
 from fastmcp import FastMCP
 from typing import Optional
-import time
-import json
-import sys
+import argparse
 import os
 import requests
 
 # Initialize the MCP Server (Perception Layer only)
 mcp = FastMCP("RescueSwarm")
 
-BASE_URL = "http://127.0.0.1:8000/api/mcp"
+BASE_URL = os.getenv("RESCUE_API_MCP_BASE_URL", "http://127.0.0.1:8000/api/mcp")
 
 @mcp.tool()
 def check_battery(drone_id: str) -> int:
@@ -56,6 +54,15 @@ def get_thermal_memory(drone_id: str) -> list:
     except: return []
 
 @mcp.tool()
+def scan_adjacent(drone_id: str) -> dict:
+    """Scan the 4 adjacent cells around the drone and return obstacle/thermal/survivor signals."""
+    try:
+        r = requests.get(f"{BASE_URL}/drone/{drone_id}/scan_adjacent")
+        return r.json() if r.status_code == 200 else {"error": "API error"}
+    except:
+        return {"error": "no sim"}
+
+@mcp.tool()
 def step_towards(drone_id: str, target_x: int, target_y: int) -> dict:
     """Computes the optimal 1-step move (nx, ny) towards a target, avoiding obstacles."""
     try:
@@ -72,22 +79,118 @@ def thermal_scan_preview(drone_id: str) -> str:
     except: return "Error"
 
 @mcp.tool()
-def submit_intent(drone_id: str, action: str, target_x: int, target_y: int, rationale: str, new_status: Optional[str] = None) -> str:
+def submit_intent(
+    drone_id: str,
+    action: str,
+    target_x: Optional[int] = None,
+    target_y: Optional[int] = None,
+    rationale: Optional[str] = None,
+    new_status: Optional[str] = None,
+) -> str:
+    """Submit a drone intent to the backend to be applied to the simulation.
+
+    Note: action must be one of MOVE / THERMAL_SCAN / RETURN_TO_BASE / CONTINUE_CHARGING / IDLE.
+    Values like SEARCHING/CHARGING/RETURNING are statuses and belong in new_status, not action.
     """
-    REQUIRED FINAL STEP: Submit your final decision for this tick.
-    Valid actions: MOVE, THERMAL_SCAN, RETURN_TO_BASE, CONTINUE_CHARGING, IDLE.
-    Valid statuses: SEARCHING, CHARGING, RETURNING, IDLE.
-    """
+    try:
+        allowed_actions = {"MOVE", "THERMAL_SCAN", "RETURN_TO_BASE", "CONTINUE_CHARGING", "IDLE"}
+        allowed_statuses = {"SEARCHING", "CHARGING", "RETURNING", "IDLE"}
+
+        action_norm = (action or "").strip().upper()
+        action_aliases = {
+            "SCAN": "THERMAL_SCAN",
+            "THERMAL": "THERMAL_SCAN",
+            "THERMALSCAN": "THERMAL_SCAN",
+            "RETURN": "RETURN_TO_BASE",
+            "CHARGE": "CONTINUE_CHARGING",
+        }
+        action_norm = action_aliases.get(action_norm, action_norm)
+
+        if action_norm in allowed_statuses and action_norm not in allowed_actions:
+            if new_status is None:
+                new_status = action_norm
+            if action_norm == "SEARCHING":
+                action_norm = "MOVE"
+            elif action_norm == "RETURNING":
+                action_norm = "RETURN_TO_BASE"
+            elif action_norm == "CHARGING":
+                action_norm = "CONTINUE_CHARGING"
+            else:
+                action_norm = "IDLE"
+            if rationale is None:
+                rationale = ""
+            rationale = (rationale + " | " if rationale else "") + "Coerced status-like action into new_status."
+
+        if action_norm not in allowed_actions:
+            if rationale is None:
+                rationale = ""
+            rationale = (rationale + " | " if rationale else "") + f"Unknown action '{action_norm}', defaulting to IDLE."
+            action_norm = "IDLE"
+
+        pos_r = requests.get(f"{BASE_URL}/drone/{drone_id}/pos")
+        pos = pos_r.json() if pos_r.status_code == 200 else {"x": 9, "y": 9}
+        cx, cy = int(pos.get("x", 9)), int(pos.get("y", 9))
+
+        if action_norm == "MOVE" and target_x is not None and target_y is not None:
+            if int(target_x) == cx and int(target_y) == cy:
+                action_norm = "IDLE"
+                if rationale is None:
+                    rationale = ""
+                rationale = (rationale + " | " if rationale else "") + "MOVE target equals current position; converted to IDLE."
+            if abs(cx - int(target_x)) + abs(cy - int(target_y)) != 1:
+                step_r = requests.get(
+                    f"{BASE_URL}/drone/{drone_id}/step_towards",
+                    params={"tx": int(target_x), "ty": int(target_y)}
+                )
+                step = step_r.json() if step_r.status_code == 200 else {"x": cx, "y": cy}
+                target_x, target_y = int(step.get("x", cx)), int(step.get("y", cy))
+                if rationale is None:
+                    rationale = ""
+                rationale = (rationale + " | " if rationale else "") + f"Coerced MOVE target to 1-step ({target_x},{target_y})."
+
+        if target_x is None or target_y is None:
+            if action_norm == "MOVE":
+                wp_r = requests.get(f"{BASE_URL}/drone/{drone_id}/waypoints")
+                wps = wp_r.json() if wp_r.status_code == 200 else []
+                if wps:
+                    tx, ty = int(wps[0][0]), int(wps[0][1])
+                else:
+                    tx, ty = (0, 0) if (cx, cy) == (9, 9) else (9, 9)
+
+                step_r = requests.get(f"{BASE_URL}/drone/{drone_id}/step_towards", params={"tx": tx, "ty": ty})
+                step = step_r.json() if step_r.status_code == 200 else {"x": cx, "y": cy}
+                target_x, target_y = int(step.get("x", cx)), int(step.get("y", cy))
+                if rationale is None:
+                    rationale = f"Auto-filled MOVE target via step_towards to ({target_x},{target_y})"
+            else:
+                target_x, target_y = cx, cy
+                if rationale is None:
+                    rationale = "Auto-filled target to current position"
+        if rationale is None:
+            rationale = "No rationale provided"
+    except Exception:
+        if target_x is None:
+            target_x = 9
+        if target_y is None:
+            target_y = 9
+        if rationale is None:
+            rationale = "Auto-filled intent fields after error"
+
     payload = {
         "drone_id": drone_id,
-        "action": action,
+        "action": action_norm,
         "target_x": target_x,
         "target_y": target_y,
         "rationale": rationale,
         "new_status": new_status
     }
-    # This just returns success to the agent; the Flow captures tool calls via thinking_logger
-    return f"Intent for {drone_id} submitted: {action} to ({target_x}, {target_y})"
+    try:
+        r = requests.post(f"{BASE_URL}/intent", json=payload)
+        if r.status_code == 200:
+            return r.text[:300]
+        return f"Error: {r.status_code}"
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 @mcp.tool()
 def get_distance_to_base(drone_id: str) -> dict:
@@ -118,4 +221,9 @@ def get_mission_data() -> dict:
     except: return {"mission_status": "error"}
 
 if __name__ == "__main__":
-    mcp.run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--transport", default=os.getenv("MCP_TRANSPORT", "stdio"))
+    parser.add_argument("--host", default=os.getenv("MCP_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.getenv("MCP_PORT", "9001")))
+    args = parser.parse_args()
+    mcp.run(transport=args.transport, host=args.host, port=args.port)

@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from crewai import Agent, Crew, Task, LLM
-from crewai.mcp import MCPServerStdio
 from crewai.events import (
     AgentExecutionStartedEvent,
     AgentExecutionCompletedEvent,
@@ -14,6 +13,10 @@ from crewai.events import (
     ToolUsageFinishedEvent,
 )
 from crewai.events import BaseEventListener
+try:
+    from crewai.mcp import MCPServerHTTP
+except Exception:
+    MCPServerHTTP = None
 
 # Load .env from project root
 from dotenv import load_dotenv
@@ -169,26 +172,22 @@ thinking_logger = AgentThinkingLogger()
 
 
 # ──────────────────────────────────────────────
-# MCP Server Connection
-# ──────────────────────────────────────────────
-
-import sys as _sys
-
-# The MCP server runs as a subprocess — it needs:
-# 1. The same Python (venv) via sys.executable
-# 2. PYTHONPATH pointing to project root so it can `import simulation`
-_project_root = str(Path(__file__).resolve().parents[3])
-
-rescue_mcp_server = MCPServerStdio(
-    command=_sys.executable,
-    args=[os.path.join(os.path.dirname(__file__), "mcp_server.py")],
-    env={**os.environ, "PYTHONPATH": _project_root},
-)
-
-
-# ──────────────────────────────────────────────
 # RescueCrew
 # ──────────────────────────────────────────────
+
+from .http_tools import (
+    check_battery_tool,
+    get_status_tool,
+    get_current_pos_tool,
+    get_next_waypoint_tool,
+    get_thermal_memory_tool,
+    step_towards_tool,
+    thermal_scan_preview_tool,
+    submit_intent_tool,
+    get_distance_to_base_tool,
+    get_mission_data_tool,
+)
+
 
 class RescueCrew:
     """Provides the instantiated Agent and dynamic Task configurations for the Swarm."""
@@ -201,10 +200,32 @@ class RescueCrew:
 
     def search_and_rescue_drone(self) -> Agent:
         """Returns a the agent instance."""
+        transport = os.getenv("CREW_MCP_TRANSPORT", "http").lower()
+        if transport == "http" and MCPServerHTTP is not None:
+            url = os.getenv("RESCUE_MCP_HTTP_URL", "http://localhost:9001/mcp")
+            return Agent(
+                config=self.agents_config['search_and_rescue_drone'],
+                llm=_llm,
+                mcps=[MCPServerHTTP(url=url, streamable=True, cache_tools_list=True)],
+                verbose=True
+            )
+        tools = [
+            check_battery_tool,
+            get_status_tool,
+            get_current_pos_tool,
+            get_next_waypoint_tool,
+            get_thermal_memory_tool,
+            step_towards_tool,
+            thermal_scan_preview_tool,
+            submit_intent_tool,
+            get_distance_to_base_tool,
+            get_mission_data_tool,
+        ]
+        tools = [t for t in tools if t]
         return Agent(
             config=self.agents_config['search_and_rescue_drone'],
             llm=_llm,
-            mcps=[rescue_mcp_server],
+            tools=tools,
             verbose=True
         )
 
@@ -223,11 +244,9 @@ class RescueCrew:
         )
 
     def crew(self, tasks: list[Task]) -> Crew:
-        # CrewAI requires the LAST task to be synchronous
         if tasks:
-            for t in tasks[:-1]:
-                t.async_execution = True
-            tasks[-1].async_execution = False
+            for t in tasks:
+                t.async_execution = False
 
         crew_instance = Crew(
             agents=[t.agent for t in tasks if t.agent],

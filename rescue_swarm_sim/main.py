@@ -9,12 +9,12 @@ def start_services():
 
     try:
         # 1. Start the FastAPI Backend (Simulation & Database API)
-        print("--> Starting Python Simulation Backend (Port 8000)...")
+        print("--> Starting Python Simulation Backend (Port 8000) with access logs...")
         env = os.environ.copy()
         env["PYTHONPATH"] = os.getcwd()
         
         backend_process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "api:app", "--port", "8000", "--no-access-log", "--log-level", "warning"],
+            [sys.executable, "-m", "uvicorn", "api:app", "--port", "8000", "--log-level", "info"],
             cwd=os.getcwd(),
             env=env
         )
@@ -23,11 +23,24 @@ def start_services():
         # Give the backend a quick second to spin up before the frontend hits it
         time.sleep(2)
 
-        # 2. Start the Next.js Frontend (Live React Map)
-        print("--> Starting Next.js Live Map (Port 3000)...")
+        print("--> Starting MCP Server (HTTP Transport, Port 9001)...")
+        mcp_process = subprocess.Popen(
+            [sys.executable, os.path.join("swarm_flow", "crews", "rescue_crew", "mcp_server.py"), "--transport", "http", "--host", "127.0.0.1", "--port", "9001"],
+            cwd=os.getcwd(),
+            env=env
+        )
+        processes.append(mcp_process)
+
+        print("--> Starting UI (Port 3000)...")
         npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
-        # Look one directory UP from the current folder, then find rescue-ui
-        ui_path = os.path.join(os.path.dirname(os.getcwd()), "rescue-ui")
+        ui_override = os.environ.get("RESCUE_UI_PATH")
+        if ui_override:
+            ui_path = ui_override
+        else:
+            base_dir = os.path.dirname(os.getcwd())
+            candidate_new = os.path.join(base_dir, "new_rescue_ui")
+            candidate_old = os.path.join(base_dir, "rescue-ui")
+            ui_path = candidate_new if os.path.isdir(candidate_new) else candidate_old
         
         frontend_process = subprocess.Popen(
             [npm_cmd, "run", "dev"],
@@ -46,7 +59,7 @@ def start_services():
         # ai_process = subprocess.Popen([sys.executable, "agent.py"], cwd=os.getcwd(), env=env)
         # processes.append(ai_process)
 
-        print("\n✅ All systems nominal. Dashboard available at http://localhost:3000")
+        print("\n✅ All systems nominal. UI available at http://localhost:3000")
         print("Press Ctrl+C to shut down all servers.")
 
         # Keep the master script alive while the subprocesses run

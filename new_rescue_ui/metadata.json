@@ -1,0 +1,5 @@
+{
+  "name": "Aegis Drone Command",
+  "description": "Autonomous Command Agent system for rescue drone orchestration in disaster zones.",
+  "requestFramePermissions": []
+}

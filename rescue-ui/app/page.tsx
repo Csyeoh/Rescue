@@ -38,21 +38,31 @@ export default function Dashboard() {
       const ws = new WebSocket("ws://127.0.0.1:8000/ws");
       wsRef.current = ws;
 
+      ws.onopen = () => {
+        console.log("[WS] connected");
+      };
+
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
+        console.log("[WS] message", msg.type, msg.payload?.tick ?? "");
         if (msg.type === "partitioning_start") {
           setIsPreview(false);
           setPartitioningStatus({ active: true, message: msg.payload.message });
         } else if (msg.type === "partitioning_complete") {
           setPartitioningStatus({ active: false, message: "" });
-          setWorldState(msg.payload);
+          setWorldState((prev: any) => ({
+            ...msg.payload,
+            logs: Array.isArray(prev?.logs) ? prev.logs : []
+          }));
         } else if (msg.type === "tick_update") {
-          const { drone_states, map_updates, agent_logs, tick } = msg.payload;
+          const { drone_states, map_updates, agent_logs = [], tick } = msg.payload || {};
+          console.log("[WS] tick_update", { drones: drone_states?.length, updates: map_updates?.length, logs: agent_logs?.length });
           
           setWorldState((prev: any) => {
             // 1. Update terrain with any NEW discoveries (obstacle found, cell scanned, etc.)
-            const newTerrain = [...prev.terrain];
-            map_updates.forEach((upd: any) => {
+            const prevTerrain = Array.isArray(prev?.terrain) ? prev.terrain : [];
+            const newTerrain = [...prevTerrain];
+            (map_updates ?? []).forEach((upd: any) => {
               const idx = newTerrain.findIndex((t: any) => t.x === upd.x && t.y === upd.y);
               if (idx !== -1) {
                 newTerrain[idx] = { ...newTerrain[idx], ...upd };
@@ -60,8 +70,9 @@ export default function Dashboard() {
             });
 
             // 2. Update survivors based on map_updates (if any were found)
-            const newSurvivors = [...prev.survivors];
-            map_updates.forEach((upd: any) => {
+            const prevSurvivors = Array.isArray(prev?.survivors) ? prev.survivors : [];
+            const newSurvivors = [...prevSurvivors];
+            (map_updates ?? []).forEach((upd: any) => {
               if (upd.survivor_found) {
                 const sIdx = newSurvivors.findIndex((s: any) => s.id === upd.survivor_id);
                 if (sIdx !== -1) newSurvivors[sIdx].discovered = true;
@@ -70,11 +81,12 @@ export default function Dashboard() {
 
             // 3. Update drones with new positions/battery
             // Note: backend now sends 'id' which matches frontend expectaction
-            const newDrones = [...drone_states];
+            const newDrones = Array.isArray(drone_states) ? [...drone_states] : [];
 
             // 4. Append new logs
-            const newLogs = [...prev.logs];
-            agent_logs.forEach((log: any) => {
+            const prevLogs = Array.isArray(prev?.logs) ? prev.logs : [];
+            const newLogs = [...prevLogs];
+            (agent_logs ?? []).forEach((log: any) => {
               newLogs.push({
                 time: `TICK ${tick}`,
                 drone: log.drone_id,
@@ -98,8 +110,12 @@ export default function Dashboard() {
         }
       };
 
+      ws.onerror = (e) => {
+        console.error("[WS] error", e);
+      };
+
       ws.onclose = () => {
-        // Auto-reconnect after 2s
+        console.warn("[WS] closed, reconnecting...");
         setTimeout(connect, 2000);
       };
     };
@@ -111,6 +127,16 @@ export default function Dashboard() {
     try {
       const { scenario, ...restConfig } = config;
       const deployConfig = { ...restConfig, map_data: mapData };
+      setWorldState((prev: any) => ({
+        ...prev,
+        logs: [
+          {
+            time: new Date().toISOString().split("T")[1].substring(0, 8),
+            drone: "SYSTEM",
+            message: "Mission deployed. Awaiting first tick update."
+          }
+        ]
+      }));
       const response = await fetch("http://localhost:8000/api/start_mission", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
