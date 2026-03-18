@@ -135,3 +135,28 @@ if crewai_tool:
             return "SUCCESS"
         database._with_retry(_do_write)
         return "Reasoning Logged."
+
+
+def calculate_obstacle_multiplier(total_discovered: int, total_explored: int) -> float:
+    ratio_smoothed = (float(total_discovered) + 2.0) / (float(total_explored) + 10.0)
+    gap = 0.15 * (1.0 - ratio_smoothed)
+    return 1.0 + ratio_smoothed + gap
+
+
+def calculate_true_battery_cost(d_commute: float, n_unsearched: float, d_rtb: float, multiplier: float) -> int:
+    search_steps = float(n_unsearched) * float(multiplier)
+    return int((float(d_commute) + search_steps + float(d_rtb)) * 2.0)
+
+
+def calculate_detour_penalty(
+    current_pos: tuple[int, int],
+    target_pos: tuple[int, int],
+    base_pos: tuple[int, int] = (9, 9),
+) -> int:
+    cx, cy = int(current_pos[0]), int(current_pos[1])
+    tx, ty = int(target_pos[0]), int(target_pos[1])
+    bx, by = int(base_pos[0]), int(base_pos[1])
+
+    direct_distance = abs(cx - tx) + abs(cy - ty)
+    detour_distance = (abs(cx - bx) + abs(cy - by)) + (abs(bx - tx) + abs(by - ty))
+    return detour_distance - direct_distance
