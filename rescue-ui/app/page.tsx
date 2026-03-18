@@ -35,7 +35,7 @@ export default function Dashboard() {
   // WebSocket listener for real-time backend events
   useEffect(() => {
     const connect = () => {
-      const ws = new WebSocket("ws://localhost:8000/ws");
+      const ws = new WebSocket("ws://127.0.0.1:8000/ws");
       wsRef.current = ws;
 
       ws.onmessage = (event) => {
@@ -46,6 +46,55 @@ export default function Dashboard() {
         } else if (msg.type === "partitioning_complete") {
           setPartitioningStatus({ active: false, message: "" });
           setWorldState(msg.payload);
+        } else if (msg.type === "tick_update") {
+          const { drone_states, map_updates, agent_logs, tick } = msg.payload;
+          
+          setWorldState((prev: any) => {
+            // 1. Update terrain with any NEW discoveries (obstacle found, cell scanned, etc.)
+            const newTerrain = [...prev.terrain];
+            map_updates.forEach((upd: any) => {
+              const idx = newTerrain.findIndex((t: any) => t.x === upd.x && t.y === upd.y);
+              if (idx !== -1) {
+                newTerrain[idx] = { ...newTerrain[idx], ...upd };
+              }
+            });
+
+            // 2. Update survivors based on map_updates (if any were found)
+            const newSurvivors = [...prev.survivors];
+            map_updates.forEach((upd: any) => {
+              if (upd.survivor_found) {
+                const sIdx = newSurvivors.findIndex((s: any) => s.id === upd.survivor_id);
+                if (sIdx !== -1) newSurvivors[sIdx].discovered = true;
+              }
+            });
+
+            // 3. Update drones with new positions/battery
+            // Note: backend now sends 'id' which matches frontend expectaction
+            const newDrones = [...drone_states];
+
+            // 4. Append new logs
+            const newLogs = [...prev.logs];
+            agent_logs.forEach((log: any) => {
+              newLogs.push({
+                time: `TICK ${tick}`,
+                drone: log.drone_id,
+                message: log.type === 'tool_call' ? `Action: ${log.tool}` : log.content
+              });
+            });
+
+            return {
+              ...prev,
+              terrain: newTerrain,
+              drones: newDrones,
+              survivors: newSurvivors,
+              logs: newLogs.slice(-50), // Keep last 50 for performance
+              tick
+            };
+          });
+        } else if (msg.type === "mission_complete") {
+          alert(`🎉 MISSION ACCOMPLISHED!\n${msg.payload.message}`);
+        } else if (msg.type === "mission_ended") {
+           console.log("Mission ended gracefully.");
         }
       };
 

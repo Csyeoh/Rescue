@@ -1,0 +1,1 @@
+Always reference @ARCHITECTURE_MAP.md before writing new code, modifying existing components, or planning new features. Use this map to understand the project's global state, data flow, and directory structure to avoid duplicating code or breaking existing architecture.

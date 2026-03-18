@@ -1,251 +1,121 @@
 from fastmcp import FastMCP
+from typing import Optional
 import time
 import json
 import sys
 import os
+import requests
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-import simulation
-
-# Initialize the MCP Server
+# Initialize the MCP Server (Perception Layer only)
 mcp = FastMCP("RescueSwarm")
 
-@mcp.tool()
-def discover_drones() -> list[str]:
-    """Returns a list of all active drone IDs available for command in the simulation."""
-    if not simulation.sim_world: return []
-    from simulation import DroneAgent
-    drones = []
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent):
-            drones.append(agent.unique_id)
-    return drones
+BASE_URL = "http://127.0.0.1:8000/api/mcp"
 
 @mcp.tool()
 def check_battery(drone_id: str) -> int:
-    """Returns the current battery level (0-100) as an integer for a specific drone."""
-    if not simulation.sim_world: return -1
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            return agent.battery
-    return -1
+    """Returns the current battery level (0-100) for a drone."""
+    try:
+        r = requests.get(f"{BASE_URL}/drone/{drone_id}/battery")
+        return r.json() if r.status_code == 200 else -1
+    except: return -1
 
 @mcp.tool()
 def get_status(drone_id: str) -> str:
-    """Returns the current status of the drone. Expected values are CHARGING, SEARCHING, IDLE or RETURNING."""
-    if not simulation.sim_world: return f"Error: simulation resting."
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            return agent.status
-    return f"Error: {drone_id} not found."
-
-@mcp.tool()
-def set_status(drone_id: str, new_status: str) -> str:
-    """Changes the drone's status to a new value (e.g. SEARCHING, RETURNING, CHARGING, IDLE)."""
-    if not simulation.sim_world: return f"Error: simulation resting."
-    from simulation import DroneAgent
-    valid_statuses = ["CHARGING", "SEARCHING", "IDLE", "RETURNING"]
-    if new_status not in valid_statuses:
-        return f"Error: Invalid status {new_status}."
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            agent.status = new_status
-            return f"Success: {drone_id} status changed to {new_status}"
-    return f"Error: {drone_id} not found."
+    """Returns the current status (SEARCHING, RETURNING, etc.)."""
+    try:
+        r = requests.get(f"{BASE_URL}/drone/{drone_id}/status")
+        return r.json() if r.status_code == 200 else "Error: sim offline"
+    except: return "Error: sim offline"
 
 @mcp.tool()
 def get_current_pos(drone_id: str) -> dict:
     """Returns the current (x, y) location of a given drone."""
-    if not simulation.sim_world: return {"error": "no sim"}
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            if agent.pos:
-                return {"x": agent.pos[0], "y": agent.pos[1]}
-            else:
-                return {"x": 9, "y": 9}
-    return {"error": f"{drone_id} not found."}
+    try:
+        r = requests.get(f"{BASE_URL}/drone/{drone_id}/pos")
+        return r.json() if r.status_code == 200 else {"error": "no sim"}
+    except: return {"error": "no sim"}
 
 @mcp.tool()
-def get_base_pos() -> dict:
-    """Returns the static base camp position (9, 9)."""
-    return {"x": 9, "y": 9}
-
-@mcp.tool()
-def get_priority_list(drone_id: str) -> list:
-    """Returns the list of (x, y) coordinates assigned to this drone to search."""
-    if not simulation.sim_world: return []
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            # Filter out already discovered cells globally
-            # Return up to 10 to keep context size manageable
-            remaining = [pos for pos in agent.priority_searching_list if pos not in simulation.sim_world.global_discovered_cells]
-            return remaining[:10]
-    return []
+def get_next_waypoint(drone_id: str) -> dict:
+    """Returns the next undiscovered (x, y) target for this drone."""
+    try:
+        r = requests.get(f"{BASE_URL}/drone/{drone_id}/waypoints")
+        if r.status_code == 200:
+            wps = r.json()
+            if wps:
+                return {"has_waypoint": True, "x": wps[0][0], "y": wps[0][1], "remaining_count": len(wps)}
+        return {"has_waypoint": False, "remaining_count": 0}
+    except: return {"error": "no sim"}
 
 @mcp.tool()
 def get_thermal_memory(drone_id: str) -> list:
-    """Returns the list of (x, y) thermal signatures this drone remembers it needs to check."""
-    if not simulation.sim_world: return []
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            return agent.thermal_memory
-    return []
+    """Returns the list of detected thermal coordinates."""
+    try:
+        r = requests.get(f"{BASE_URL}/drone/{drone_id}/thermal")
+        return r.json() if r.status_code == 200 else []
+    except: return []
 
 @mcp.tool()
-def mark_cell_discovered(drone_id: str, x: int, y: int) -> str:
-    """Marks a cell as completely searched so no other drones explore it."""
-    if not simulation.sim_world: return "Error: no sim"
-    simulation.sim_world.global_discovered_cells.add((x, y))
-    from simulation import DroneAgent
-    # Clean from drone's local list if present
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            if (x, y) in agent.priority_searching_list:
-                agent.priority_searching_list.remove((x, y))
-            if (x, y) in agent.thermal_memory:
-                agent.thermal_memory.remove((x, y))
-    simulation.sim_world.log_action(drone_id, f"Marked ({x}, {y}) as thoroughly searched.")
-    return f"Success: marked ({x}, {y}) as discovered."
+def step_towards(drone_id: str, target_x: int, target_y: int) -> dict:
+    """Computes the optimal 1-step move (nx, ny) towards a target, avoiding obstacles."""
+    try:
+        r = requests.get(f"{BASE_URL}/drone/{drone_id}/step_towards", params={"tx": target_x, "ty": target_y})
+        return r.json() if r.status_code == 200 else {"error": "API error"}
+    except: return {"error": "no sim"}
 
 @mcp.tool()
-def move_drone(drone_id: str, x: int, y: int) -> str:
-    """
-    Moves a rescue drone to specific (x, y) coordinates on the grid.
-    Automatically drains battery by 1% per move, or recharges to 100% if moved to Base Camp (9,9).
-    Includes Passive Sensors: Scans adjacent grids for obstacles and thermal auras upon arrival.
-    """
-    if not (0 <= x < 20 and 0 <= y < 20):
-        return "Failure: Coordinates out of bounds. Grid is strictly 0 to 19."
-        
-    world = simulation.sim_world
-    if not world: return "Failure: Simulation not running."
-    from simulation import DroneAgent, CellAgent, SurvivorAgent
-    
-    drone = None
-    for agent in world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            drone = agent
-            break
-            
-    if not drone: return f"Error: {drone_id} not found."
-    if drone.battery < 2: return f"Failure: {drone_id} battery exhausted. Drone is grounded."
-
-    # Physical obstacles block movement
-    for obj in world.grid.get_cell_list_contents([(x, y)]):
-        if isinstance(obj, CellAgent) and getattr(obj, "is_obstacle", False):
-            obj.obstacle_discovered = True
-            world.log_action(drone_id, f"CRITICAL: Flight path to ({x}, {y}) blocked by physical obstacle!")
-            return f"Failure: Movement to ({x}, {y}) blocked by an obstacle. Route around it."
-
-    # Move logic
-    drone.move((x, y)) 
-    
-    if x == 9 and y == 9: # Base
-        drone.battery = 100
-        drone.status = "CHARGING"
-
-    # Passive Sensors
-    detected_obstacles = []
-    thermal_alert = False
-    
-    adjacent_coords = [(x, y-1), (x, y+1), (x-1, y), (x+1, y)]
-    for ax, ay in adjacent_coords:
-        if 0 <= ax < world.width and 0 <= ay < world.height:
-            contents = world.grid.get_cell_list_contents([(ax, ay)])
-            for obj in contents:
-                if isinstance(obj, CellAgent) and getattr(obj, "is_obstacle", False):
-                    if not obj.obstacle_discovered:
-                        detected_obstacles.append((ax, ay))
-                        obj.obstacle_discovered = True
-                
-                if getattr(obj, "thermal_aura", False):
-                    # Survivor not yet found in the grid?
-                    cell_survivors = world.grid.get_cell_list_contents([(ax, ay)])
-                    is_found = False
-                    for possible_sv in cell_survivors:
-                        if isinstance(possible_sv, SurvivorAgent) and possible_sv.found:
-                            is_found = True
-                    if not is_found:
-                        thermal_alert = True
-                        if (ax, ay) not in drone.thermal_memory:
-                            drone.thermal_memory.append((ax, ay))
-                elif isinstance(obj, SurvivorAgent) and not getattr(obj, "found", False):
-                    thermal_alert = True
-                    if (ax, ay) not in drone.thermal_memory:
-                        drone.thermal_memory.append((ax, ay))
-
-    log_msg = "Returned to Base Camp. Recharging to 100%." if (x == 9 and y == 9) else f"Moved to sector ({x}, {y})."
-    world.log_action(drone_id, log_msg)
-    
-    response_msg = f"Success: {drone_id} moved to ({x}, {y}). Battery now at {drone.battery}%."
-    if detected_obstacles:
-        obs_str = ", ".join([f"({ox},{oy})" for ox, oy in detected_obstacles])
-        response_msg += f" [PROXIMITY WARNING: New obstacles mapped at {obs_str}.]"
-        
-    if thermal_alert:
-        response_msg += " [SENSOR ALERT: Faint thermal aura detected in an adjacent sector! Added to thermal_memory.]"
-        
-    return response_msg
+def thermal_scan_preview(drone_id: str) -> str:
+    """Quick preview of current cell for heat signatures (does not rescue)."""
+    try:
+        r = requests.get(f"{BASE_URL}/drone/{drone_id}/thermal_scan")
+        return r.json() if r.status_code == 200 else "Error"
+    except: return "Error"
 
 @mcp.tool()
-def thermal_scan(drone_id: str) -> str:
+def submit_intent(drone_id: str, action: str, target_x: int, target_y: int, rationale: str, new_status: Optional[str] = None) -> str:
     """
-    Performs a high-powered thermal scan at the drone's EXACT current (x, y) location.
-    Returns a message indicating if a hidden survivor was found on this specific grid square.
+    REQUIRED FINAL STEP: Submit your final decision for this tick.
+    Valid actions: MOVE, THERMAL_SCAN, RETURN_TO_BASE, CONTINUE_CHARGING, IDLE.
+    Valid statuses: SEARCHING, CHARGING, RETURNING, IDLE.
     """
-    world = simulation.sim_world
-    if not world: return "Failure: Simulation not running."
-    from simulation import DroneAgent, SurvivorAgent
-    
-    drone = None
-    for agent in world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            drone = agent
-            break
-            
-    if not drone or not drone.pos: return f"Error: {drone_id} not found."
-        
-    dx, dy = drone.pos
-    contents = world.grid.get_cell_list_contents([(dx, dy)])
-    
-    for obj in contents:
-        if isinstance(obj, SurvivorAgent):
-            if not obj.found:
-                obj.found = True
-                world.log_action(drone_id, f"URGENT: Thermal match! Discovered {obj.unique_id} at ({dx}, {dy})!")
-                
-                # Global condition triggers if all are found
-                world.found_survivors += 1 
-                if world.total_survivors > 0 and world.found_survivors == world.total_survivors:
-                    if not getattr(world, "mission_complete", False):
-                        world.mission_complete = True
-                        world.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued.")
-                
-                return f"SUCCESS: Thermal signature detected! {obj.unique_id} found and logged."
-            else:
-                return "Thermal signature detected, but survivor is already marked as rescued."
-                
-    return "Scan complete. No thermal signatures detected at this exact location."
+    payload = {
+        "drone_id": drone_id,
+        "action": action,
+        "target_x": target_x,
+        "target_y": target_y,
+        "rationale": rationale,
+        "new_status": new_status
+    }
+    # This just returns success to the agent; the Flow captures tool calls via thinking_logger
+    return f"Intent for {drone_id} submitted: {action} to ({target_x}, {target_y})"
+
+@mcp.tool()
+def get_distance_to_base(drone_id: str) -> dict:
+    """Returns distance to (9,9) and safety status."""
+    try:
+        pos_r = requests.get(f"{BASE_URL}/drone/{drone_id}/pos")
+        batt_r = requests.get(f"{BASE_URL}/drone/{drone_id}/battery")
+        if pos_r.status_code != 200 or batt_r.status_code != 200:
+            return {"error": "sim offline"}
+        pos = pos_r.json()
+        batt = batt_r.json()
+        if "x" not in pos: return {"error": "no pos"}
+        dist = abs(pos["x"] - 9) + abs(pos["y"] - 9)
+        return {
+            "current_pos": pos,
+            "base_pos": {"x": 9, "y": 9},
+            "distance": dist,
+            "safe_to_continue": batt > dist + 5
+        }
+    except: return {"error": "calculation error"}
 
 @mcp.tool()
 def get_mission_data() -> dict:
-    """
-    Returns global state such as the simulation status.
-    """
-    world = simulation.sim_world
-    if not world: 
-        return {"mission_status": "error", "error": "sim offline"}
-        
-    return {
-        "mission_status": "complete" if getattr(world, "mission_complete", False) else "in_progress",
-        "remaining_survivors": world.total_survivors - world.found_survivors,
-        "global_discovered_count": len(world.global_discovered_cells)
-    }
+    """Returns global mission status and survivor counts."""
+    try:
+        r = requests.get(f"{BASE_URL}/mission_data")
+        return r.json() if r.status_code == 200 else {"mission_status": "error"}
+    except: return {"mission_status": "error"}
 
 if __name__ == "__main__":
-    mcp.run_stdio()
+    mcp.run()

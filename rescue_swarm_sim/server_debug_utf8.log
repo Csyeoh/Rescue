@@ -1,0 +1,38 @@
+﻿..\venv\scripts\python.exe : INFO:     Started server process [18388]
+At line:1 char:1
++ ..\venv\scripts\python.exe -m uvicorn api:app --port 8000 > server_de ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO:     Started server process [18388]:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+Generating Map Config: A dense downtown commercial district.
+INFO:     127.0.0.1:54284 - "POST /api/generate_map HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64212 - "POST /api/start_mission HTTP/1.1" 200 OK
+Exception in thread Thread-2 (run_flow_async):
+Traceback (most recent call last):
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "D:\Project\Rescue\rescue_swarm_sim\api.py", line 88, in run_flow_async
+    from swarm_flow.main import kickoff
+  File "D:\Project\Rescue\rescue_swarm_sim\swarm_flow\main.py", line 11, in <module>
+    from .crews.rescue_crew.rescue_crew import RescueCrew, DroneIntent, thinking_logger
+  File "D:\Project\Rescue\rescue_swarm_sim\swarm_flow\crews\rescue_crew\rescue_crew.py", line 64, in <module>
+    _llm = _build_llm()
+           ^^^^^^^^^^^^
+  File "D:\Project\Rescue\rescue_swarm_sim\swarm_flow\crews\rescue_crew\rescue_crew.py", line 35, in _build_llm
+    print(f"\U0001f916 LLM: {model} @ {base_url}")
+  File "D:\Project\Rescue\venv\Lib\site-packages\crewai\llm.py", line 141, in write
+    return self._original_stream.write(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\User\AppData\Local\Programs\Python\Python312\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f916' in position 0: character maps to <undefined>
+Generating Map Config: A dense downtown commercial district.
+INFO:     127.0.0.1:50438 - "POST /api/generate_map HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54759 - "POST /api/start_mission HTTP/1.1" 200 OK

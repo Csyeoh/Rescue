@@ -4,6 +4,11 @@ import asyncio
 from pydantic import BaseModel
 import simulation
 import websocket_manager
+from dotenv import load_dotenv
+load_dotenv()
+
+# Guard: prevent multiple concurrent flow spawns
+_flow_running = False
 
 # Initialize the API
 app = FastAPI(title="Rescue Swarm API")
@@ -34,9 +39,8 @@ class SimulationConfig(BaseModel):
 
 # Endpoint for Generate Map
 @app.post("/api/generate_map")
-def generate_map(config: SimulationConfig):
+async def generate_map(config: SimulationConfig):
     """Generates the map and returns it to the client for preview."""
-    import random
     import map_generator
     
     themes_map = {
@@ -47,9 +51,12 @@ def generate_map(config: SimulationConfig):
         "mixed": "A mixed urban layout with clusters of residential buildings."
     }
     
-    scenario_prompt = themes_map.get(config.scenario, "")
+    scenario_prompt = themes_map.get(config.scenario, "A mixed urban layout")
     print(f"Generating Map Config: {scenario_prompt}")
-    blueprint = map_generator.generate_semantic_blueprint(scenario_prompt, config.num_survivors)
+    
+    # Run CPU/Network bound generation in a thread to avoid blocking loop
+    blueprint = await asyncio.to_thread(map_generator.generate_semantic_blueprint, scenario_prompt, config.num_survivors)
+    
     if blueprint is None: return {"status": "error", "message": "Failed to generate AI map."}
 
     obstacle_diff = config.obstacle_difficulty
@@ -65,29 +72,158 @@ def generate_map(config: SimulationConfig):
     return {"status": "success", "message": "Map generated", "map_data": map_data}
 
 @app.post("/api/start_mission")
-def start_mission(config: SimulationConfig):
+async def start_mission(config: SimulationConfig):
     """Receives the deploy signal and boots up the background engine."""
+    global _flow_running
+    if _flow_running:
+        return {"status": "already_running", "message": "Swarm is already active."}
+    
+    # Initialize simulation world
     simulation.initialize_world(config.dict())
+    _flow_running = True
     
-    import threading
-    import sys
-    import os
-    if os.path.abspath(os.path.join(os.path.dirname(__file__))) not in sys.path:
-        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__))))
-    
-    def run_flow_async():
+    # Start background loop
+    async def run_flow_wrapper():
+        global _flow_running
         from swarm_flow.main import kickoff
         try:
-            kickoff()
+            print("[Nexus] Starting AI Swarm Commander in background task...")
+            # Use to_thread for the blocking kickoff
+            await asyncio.to_thread(kickoff)
         except Exception as e:
             print(f"Error running Flow: {e}")
-            
-    t = threading.Thread(target=run_flow_async, daemon=True)
-    t.start()
+        finally:
+            _flow_running = False
+            print("[Nexus] AI Swarm Commander task finished.")
+
+    asyncio.create_task(run_flow_wrapper())
         
     return {
         "status": "success", 
-        "message": "Simulation Running."
+        "message": "Simulation Running.",
+        "config": config.dict()
+    }
+
+# ──────────────────────────────────────────────
+# MCP Bridge Endpoints
+# ──────────────────────────────────────────────
+
+@app.get("/api/mcp/drones")
+def mcp_get_drones():
+    if not simulation.sim_world: return []
+    from simulation import DroneAgent
+    return [a.unique_id for a in simulation.sim_world.schedule.agents if isinstance(a, DroneAgent)]
+
+@app.get("/api/mcp/drone/{drone_id}/battery")
+def mcp_get_battery(drone_id: str):
+    if not simulation.sim_world: return -1
+    for a in simulation.sim_world.schedule.agents:
+        if a.unique_id == drone_id and hasattr(a, 'battery'):
+            return a.battery
+    return -1
+
+@app.get("/api/mcp/drone/{drone_id}/status")
+def mcp_get_status(drone_id: str):
+    if not simulation.sim_world: return "Error: simulation resting."
+    for a in simulation.sim_world.schedule.agents:
+        if a.unique_id == drone_id and hasattr(a, 'status'):
+            return a.status
+    return f"Error: {drone_id} not found."
+
+@app.post("/api/mcp/drone/{drone_id}/status")
+def mcp_set_status(drone_id: str, payload: dict):
+    if not simulation.sim_world: return "Error: simulation resting."
+    new_status = payload.get("status")
+    for a in simulation.sim_world.schedule.agents:
+        if a.unique_id == drone_id:
+            a.status = new_status
+            return f"Success: {drone_id} status changed to {new_status}"
+    return f"Error: {drone_id} not found."
+
+@app.get("/api/mcp/drone/{drone_id}/pos")
+def mcp_get_pos(drone_id: str):
+    if not simulation.sim_world: return {"error": "no sim"}
+    for a in simulation.sim_world.schedule.agents:
+        if a.unique_id == drone_id and a.pos:
+            return {"x": a.pos[0], "y": a.pos[1]}
+    return {"x": 9, "y": 9}
+
+@app.get("/api/mcp/drone/{drone_id}/waypoints")
+def mcp_get_waypoints(drone_id: str):
+    if not simulation.sim_world: return []
+    for a in simulation.sim_world.schedule.agents:
+        if a.unique_id == drone_id and hasattr(a, 'priority_searching_list'):
+            remaining = [pos for pos in a.priority_searching_list if pos not in simulation.sim_world.global_discovered_cells]
+            return remaining[:10]
+    return []
+
+@app.get("/api/mcp/drone/{drone_id}/thermal")
+def mcp_get_thermal(drone_id: str):
+    if not simulation.sim_world: return []
+    for a in simulation.sim_world.schedule.agents:
+        if a.unique_id == drone_id and hasattr(a, 'thermal_memory'):
+            return a.thermal_memory
+    return []
+
+@app.get("/api/mcp/drone/{drone_id}/thermal_scan")
+def mcp_thermal_scan(drone_id: str):
+    if not simulation.sim_world: return "Error: no sim"
+    from simulation import DroneAgent, SurvivorAgent
+    world = simulation.sim_world
+    drone = next((a for a in world.schedule.agents if a.unique_id == drone_id), None)
+    if not drone or not drone.pos: return "Error: not found"
+    
+    for obj in world.grid.get_cell_list_contents([drone.pos]):
+        if isinstance(obj, SurvivorAgent) and not obj.found:
+            return f"THERMAL SIGNATURE DETECTED at {drone.pos}."
+    return "No thermal signatures detected here."
+
+@app.get("/api/mcp/drone/{drone_id}/step_towards")
+def mcp_step_towards(drone_id: str, tx: int, ty: int):
+    if not simulation.sim_world: return {"error": "no sim"}
+    from simulation import DroneAgent, CellAgent
+    world = simulation.sim_world
+    drone = next((a for a in world.schedule.agents if a.unique_id == drone_id), None)
+    if not drone or not drone.pos: return {"error": "not found"}
+    
+    cx, cy = drone.pos
+    if cx == tx and cy == ty: return {"already_at_target": True, "x": cx, "y": cy}
+    
+    candidates = []
+    for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+        nx, ny = cx + dx, cy + dy
+        if 0 <= nx < world.width and 0 <= ny < world.height:
+            is_blocked = any(isinstance(o, CellAgent) and getattr(o, "is_obstacle", False) 
+                            for o in world.grid.get_cell_list_contents([(nx, ny)]))
+            if not is_blocked:
+                dist = abs(nx - tx) + abs(ny - ty)
+                candidates.append((dist, nx, ny))
+    
+    if not candidates: return {"error": "blocked"}
+    candidates.sort(key=lambda t: t[0])
+    return {"already_at_target": False, "x": candidates[0][1], "y": candidates[0][2]}
+
+@app.get("/api/mcp/drone/{drone_id}/thermal_scan")
+def mcp_thermal_scan(drone_id: str):
+    if not simulation.sim_world: return "Error: no sim"
+    from simulation import DroneAgent, SurvivorAgent
+    world = simulation.sim_world
+    drone = next((a for a in world.schedule.agents if a.unique_id == drone_id), None)
+    if not drone or not drone.pos: return "Error: not found"
+    
+    for obj in world.grid.get_cell_list_contents([drone.pos]):
+        if isinstance(obj, SurvivorAgent) and not obj.found:
+            return f"THERMAL SIGNATURE DETECTED at {drone.pos}. Rescue recommended."
+    return "No thermal signatures detected here."
+
+@app.get("/api/mcp/mission_data")
+def mcp_mission_data():
+    if not simulation.sim_world: return {"mission_status": "error"}
+    w = simulation.sim_world
+    return {
+        "mission_status": "complete" if getattr(w, "mission_complete", False) else "in_progress",
+        "remaining_survivors": w.total_survivors - w.found_survivors,
+        "global_discovered_count": len(w.global_discovered_cells)
     }
 
 # WebSocket endpoint
