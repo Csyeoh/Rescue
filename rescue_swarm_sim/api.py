@@ -353,6 +353,28 @@ def get_mission_data():
     conn.close()
     return {"total_survivors": total, "found_survivors": found, "mission_status": "ACTIVE" if found < total else "COMPLETE"}
 
+@app.post("/api/reset")
+def reset_simulation():
+    """Wipes the database and resets the simulation state."""
+    with database.DB_WRITE_LOCK:
+        conn = database._connect()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM drone_waypoints")
+        cursor.execute("DELETE FROM survivors")
+        cursor.execute("DELETE FROM answer_plane")
+        cursor.execute("DELETE FROM question_plane")
+        cursor.execute("DELETE FROM drones")
+        cursor.execute("DELETE FROM logs")
+        cursor.execute("DELETE FROM drone_zones")
+        cursor.execute("DELETE FROM cell_weights")
+        conn.commit()
+        conn.close()
+    
+    if simulation.sim_world:
+        simulation.sim_world = None
+    
+    return {"status": "success", "message": "Simulation database reset."}
+
 # Implementation of double-routing to support both /api/... and /api/mcp/...
 app.include_router(mcp_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api/mcp")

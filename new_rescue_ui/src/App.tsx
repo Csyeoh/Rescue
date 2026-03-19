@@ -164,7 +164,13 @@ export default function App() {
   const [grid, setGrid] = useState<GridCell[][]>([]);
 
   // --- Initialization & Reset ---
-  const resetMission = (newConfig = config) => {
+  const resetMission = async (newConfig = config) => {
+    try {
+      await fetch(`${API_BASE}/api/reset`, { method: 'POST' });
+    } catch (e) {
+      console.error("Failed to reset backend:", e);
+    }
+
     const newGrid: GridCell[][] = [];
     for (let y = 0; y < GRID_SIZE; y++) {
       const row: GridCell[] = [];

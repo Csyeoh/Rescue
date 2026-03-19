@@ -36,16 +36,38 @@ class DroneAgent(Agent):
         Prioritizes the local 'priority_searching_list' over the DB 'drone_waypoints'.
         Includes Bingo Fuel survival reflex and strictly 1-tile movement.
         """
+        # SILENCE THE DRONES: Check if docked at base with no tasks
         conn = database._connect()
         cursor = conn.cursor()
         
-        # 0. Get current position and battery from DB first
+        # Get current position from DB
         cursor.execute("SELECT x, y, battery FROM drones WHERE drone_id=?", (self.custom_id,))
         curr = cursor.fetchone()
         if not curr:
             conn.close()
             return
         cx, cy, battery = curr
+        
+        if cx == 9 and cy == 9:
+            # Check for any pending waypoints in DB
+            cursor.execute("SELECT COUNT(*) FROM drone_waypoints WHERE drone_id=? AND is_done=0", (self.custom_id,))
+            db_wp_count = cursor.fetchone()[0]
+            
+            # If at base and no local tasks and (no DB tasks OR only RTB task at 9,9)
+            if not self.priority_searching_list:
+                is_only_rtb = False
+                if db_wp_count == 1:
+                    cursor.execute("SELECT x, y FROM drone_waypoints WHERE drone_id=? AND is_done=0", (self.custom_id,))
+                    wp = cursor.fetchone()
+                    if wp[0] == 9 and wp[1] == 9:
+                        is_only_rtb = True
+                
+                if db_wp_count == 0 or is_only_rtb:
+                    self.status = "DOCKED"
+                    conn.close()
+                    return # Silent return, no logging or movement
+
+        # 0. Get current position and battery from DB first
         self.battery = battery
         start = (cx, cy)
         base_pos = (9, 9)
@@ -288,7 +310,8 @@ class DisasterZoneModel(Model):
 
     def step(self):
         """
-        Modified step() to allow drones to return to base after mission completion.
+        Modified step() to allow drones to return to base after mission completion
+        and trigger an automatic reset once all are DOCKED.
         """
         conn = database._connect()
         cursor = conn.cursor()
@@ -301,12 +324,32 @@ class DisasterZoneModel(Model):
             if total > 0 and total == found:
                 if not getattr(self, "mission_complete", False):
                     self.mission_complete = True
+                    self.reset_counter = 0 # New counter to delay the reset
                     database.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued. Initiating global RTB.")
-                # Removed early return so drones can still move during RTB Phase
+
+                # Check if all drones are DOCKED
+                drones = [a for a in self.schedule.agents if isinstance(a, DroneAgent)]
+                if drones and all(a.status == "DOCKED" for a in drones):
+                    self.reset_counter += 1
+                    if self.reset_counter > 10: # Wait 10 ticks (5 seconds) before resetting
+                        database.log_action("SYSTEM", "♻️ All drones DOCKED. Auto-resetting simulation for next mission.")
+                        print("♻️ All drones DOCKED. Auto-resetting simulation.")
+                        self._clear_old_mission_data()
+                        # Clear waypoints and zones explicitly for a full reset
+                        with database.DB_WRITE_LOCK:
+                            conn_reset = database._connect()
+                            conn_reset.execute("DELETE FROM drone_waypoints")
+                            conn_reset.execute("DELETE FROM drone_zones")
+                            conn_reset.execute("DELETE FROM cell_weights")
+                            conn_reset.commit()
+                            conn_reset.close()
+                        self.mission_complete = False # Ready for next deploy signal
+                        return # Skip the rest of this step
 
         self.tick_count += 1
         self.schedule.step() 
         self.sync_terrain_to_db()
+
 
 # ==========================================
 # ⚙️ INTENT RESOLVER

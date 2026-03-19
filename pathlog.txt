@@ -1,44 +1,88 @@
-DEBUG: Drone drone_3 target (9, 11) BLOCKED. Discarding.
-DEBUG: Drone drone_5 NO PATH to (11, 9). Discarding.
-DEBUG: Drone drone_4 NO PATH to (13, 5). Discarding.
-DEBUG: Drone drone_5 NO PATH to (11, 11). Discarding.
-DEBUG: Drone drone_1 NO PATH to (5, 9). Discarding.
-DEBUG: Drone drone_5 NO PATH to (15, 11). Discarding.
-DEBUG: Drone drone_3 NO PATH to (9, 17). Discarding.
-DEBUG: Drone drone_2 NO PATH to (9, 1). Discarding.
-DEBUG: Drone drone_2 NO PATH to (7, 3). Discarding.
-DEBUG: Drone drone_4 NO PATH to (10, 2). Discarding.
-DEBUG: Drone drone_3 NO PATH to (3, 19). Discarding.
-DEBUG: Drone drone_3 NO PATH to (7, 19). Discarding.
-DEBUG: Drone drone_5 NO PATH to (14, 14). Discarding.
-DEBUG: Drone drone_4 NO PATH to (11, 3). Discarding.
-DEBUG: Drone drone_1 NO PATH to (1, 17). Discarding.
-DEBUG: Drone drone_1 NO PATH to (0, 18). Discarding.
-DEBUG: Drone drone_5 NO PATH to (17, 13). Discarding.
-DEBUG: Drone drone_3 NO PATH to (3, 15). Discarding.
-DEBUG: Drone drone_3 NO PATH to (4, 16). Discarding.
-DEBUG: Drone drone_2 NO PATH to (7, 5). Discarding.
-DEBUG: Drone drone_1 NO PATH to (1, 3). Discarding.
-DEBUG: Drone drone_4 NO PATH to (14, 18). Discarding.
-DEBUG: Drone drone_3 NO PATH to (8, 10). Discarding.
-DEBUG: Drone drone_5 NO PATH to (16, 6). Discarding.
-DEBUG: Drone drone_5 NO PATH to (11, 7). Discarding.
-⚠️ BINGO FUEL: Drone drone_3 triggered RTB reflex. Battery: 13%, Dist: 8
-⚠️ BINGO FUEL: Drone drone_1 triggered RTB reflex. Battery: 10%, Dist: 5
-⚠️ BINGO FUEL: Drone drone_3 triggered RTB reflex. Battery: 12%, Dist: 7
-⚠️ BINGO FUEL: Drone drone_1 triggered RTB reflex. Battery: 9%, Dist: 4
-⚠️ BINGO FUEL: Drone drone_3 triggered RTB reflex. Battery: 11%, Dist: 6
-⚠️ BINGO FUEL: Drone drone_1 triggered RTB reflex. Battery: 8%, Dist: 3
-⚠️ BINGO FUEL: Drone drone_3 triggered RTB reflex. Battery: 10%, Dist: 5
-⚠️ BINGO FUEL: Drone drone_3 triggered RTB reflex. Battery: 9%, Dist: 4
-⚠️ BINGO FUEL: Drone drone_1 triggered RTB reflex. Battery: 7%, Dist: 2
-DEBUG: Drone drone_2 NO PATH to (17, 19). Discarding.
-⚠️ BINGO FUEL: Drone drone_3 triggered RTB reflex. Battery: 8%, Dist: 3
-⚠️ BINGO FUEL: Drone drone_3 triggered RTB reflex. Battery: 7%, Dist: 2
-⚠️ BINGO FUEL: Drone drone_5 triggered RTB reflex. Battery: 13%, Dist: 9
-⚠️ BINGO FUEL: Drone drone_5 triggered RTB reflex. Battery: 12%, Dist: 8
-⚠️ BINGO FUEL: Drone drone_5 triggered RTB reflex. Battery: 11%, Dist: 7
-⚠️ BINGO FUEL: Drone drone_5 triggered RTB reflex. Battery: 10%, Dist: 6
-⚠️ BINGO FUEL: Drone drone_5 triggered RTB reflex. Battery: 9%, Dist: 5
-⚠️ BINGO FUEL: Drone drone_5 triggered RTB reflex. Battery: 8%, Dist: 4
-⚠️ BINGO FUEL: Drone drone_5 triggered RTB reflex. Battery: 7%, Dist: 3
+12:12:24 AM
+[drone_1]
+COMMAND: Received 40 new waypoints.
+
+12:12:24 AM
+[SYSTEM]
+Central Agent: Analyzing State and partitioning zones...
+
+12:12:24 AM
+[SYSTEM]
+RE-DEPLOY: 5 drones recharged and ready.
+
+12:12:24 AM
+[SYSTEM]
+🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.
+
+12:12:24 AM
+[SYSTEM]
+🎉 MISSION ACCOMPLISHED! All survivors rescued. Initiating global RTB.
+
+12:12:24 AM
+[SYSTEM]
+STRATEGY: The greedy weighted BFS partition makes strategic sense because it optimizes drone battery levels and coverage limits by assigning more waypoints to drones with higher terrain density. This ensures that high-priority areas are covered efficiently, while minimizing the risk of drone exhaustion. By doing so, we maximize our chances of completing the mission objectives within the given time frame.
+
+12:12:24 AM
+[drone_3]
+Survivor spotted at (6, 16)!
+
+12:12:24 AM
+[drone_4]
+COMMAND: Received 40 new waypoints.
+
+12:12:24 AM
+[drone_3]
+COMMAND: Received 40 new waypoints.
+
+12:12:24 AM
+[drone_2]
+COMMAND: Received 40 new waypoints.
+
+12:12:24 AM
+[drone_5]
+COMMAND: Received 40 new waypoints.
+
+12:12:24 AM
+[drone_1]
+COMMAND: Received 40 new waypoints.
+
+12:12:24 AM
+[SYSTEM]
+Central Agent: Analyzing State and partitioning zones...
+
+12:12:24 AM
+[SYSTEM]
+RE-DEPLOY: 5 drones recharged and ready.
+
+--Mission Log from UI--
+
+D:\project\rescue\venv\Lib\site-packages\crewai\crew.py:1289: DeprecationWarning: deprecated
+  and hasattr(agent, "multimodal")
+D:\project\rescue\venv\Lib\site-packages\crewai\crew.py:1290: DeprecationWarning: deprecated
+  and getattr(agent, "multimodal", False)
+[FLOW] Writing 40 waypoints for drone_3
+[FLOW] Writing 40 waypoints for drone_4
+[FLOW] Execution complete.
+╭───────────────────────────────────────────────── ✅ Flow Completion ─────────────────────────────────────────────────╮
+│                                                                                                                      │
+│  Flow Execution Completed                                                                                            │
+│  Name: SwarmCommanderFlow                                                                                            │
+│  ID: 17ca2594-abfa-4561-a718-b6295d40c79a                                                                            │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+DEBUG: Drone drone_4 NO PATH to (10, 8). Discarding.
+DEBUG: Drone drone_2 NO PATH to (8, 6). Discarding.
+DEBUG: Drone drone_3 NO PATH to (6, 12). Discarding.
+DEBUG: Drone drone_5 NO PATH to (13, 11). Discarding.
+DEBUG: Drone drone_1 NO PATH to (1, 9). Discarding.
+DEBUG: Drone drone_4 NO PATH to (12, 6). Discarding.
+DEBUG: Drone drone_3 NO PATH to (4, 12). Discarding.
+DEBUG: Drone drone_4 NO PATH to (12, 2). Discarding.
+DEBUG: Drone drone_2 NO PATH to (3, 5). Discarding.
+DEBUG: Drone drone_2 NO PATH to (4, 0). Discarding.
+DEBUG: Drone drone_3 NO PATH to (7, 13). Discarding.
+🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.
+
+-- log from terminal --

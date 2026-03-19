@@ -38,6 +38,20 @@ def run_swarm_commander():
 
     while True:
         try:
+            # ── AGENT AMNESIA: Reset if no drones exist ──
+            conn = database._connect()
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM drones")
+            drone_count = c.fetchone()[0]
+            conn.close()
+
+            if drone_count == 0:
+                if mission_complete:
+                    print("♻️ Simulation Reset detected. Clearing mission state.")
+                    mission_complete = False
+                time.sleep(2.0)
+                continue
+
             # ── PHASE 0: Check Win Condition ─
             if not mission_complete:
                 conn = database._connect()
@@ -81,7 +95,7 @@ def run_swarm_commander():
 
             # ── PHASE 2: Check for idle/unassigned drones (every 10s) ─
             now = time.time()
-            if now - last_check_time > 10.0 and not _ai_running.is_set():
+            if not mission_complete and now - last_check_time > 10.0 and not _ai_running.is_set():
                 last_check_time = now
 
                 status = ai_tools.get_drone_status()
