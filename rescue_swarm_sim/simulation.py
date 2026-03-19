@@ -255,29 +255,35 @@ class DisasterZoneModel(Model):
 
     def _clear_old_mission_data(self, keep_map=False):
         """
-        Critical Fix 2: Optionally preserve map data (obstacles/survivors) across missions.
+        Modified to preserve discovered obstacles and survivors based on user feedback.
         """
         conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
         cursor = conn.cursor()
-        
+
         if not keep_map:
             cursor.execute("DELETE FROM question_plane")
             cursor.execute("DELETE FROM answer_plane")
             cursor.execute("DELETE FROM survivors")
         else:
-            # If keeping map, just reset the discovery status on the drone map
-            cursor.execute("UPDATE answer_plane SET obstacle_discovered=0, is_scanned=0")
-            # Survivors remain discovered or reset? 
-            # The user said "survivor get remain", so we leave them as is.
-            # To reset their discovery status:
+            # If keeping map:
+            # 1. Reset ONLY survivor discovery so they can be "found" again.
+            # 2. DO NOT reset obstacle discovery - they "remain" on the map.
             cursor.execute("UPDATE survivors SET is_discovered=0")
+            # We explicitly do NOT reset is_scanned/obstacle_discovered on answer_plane
 
-        cursor.execute("DELETE FROM drones")
+        # Reset drones to base rather than deleting them, ensuring agent.py stays in sync
+        cursor.execute("UPDATE drones SET x=9, y=9, battery=100, is_active=1")
         cursor.execute("DELETE FROM logs")
-        # Removed DELETE for waypoints and zones
+
         conn.commit()
         conn.close()
 
+        # Reset internal agent states to match DB
+        for agent in self.schedule.agents:
+            if isinstance(agent, DroneAgent):
+                agent.battery = 100
+                agent.status = "IDLE"
+                agent.priority_searching_list = []
     def spawn_drone(self, custom_id, start_x, start_y, battery):
         drone = DroneAgent(custom_id, self, battery)
         self.grid.place_agent(drone, (start_x, start_y))

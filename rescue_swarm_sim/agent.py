@@ -122,6 +122,17 @@ def run_swarm_commander():
                 conn.close()
 
                 if wp_count == 0 or ready_for_redeployment:
+                    # SAFETY CHECK: Don't re-deploy if mission is already complete
+                    conn_safety = database._connect()
+                    c_safety = conn_safety.cursor()
+                    c_safety.execute("SELECT COUNT(*), SUM(is_discovered) FROM survivors")
+                    row_safety = c_safety.fetchone()
+                    conn_safety.close()
+
+                    if row_safety and row_safety[0] > 0 and row_safety[0] == (row_safety[1] if row_safety[1] is not None else 0):
+                        time.sleep(1.0)
+                        continue
+
                     if ready_for_redeployment:
                         print(f"🔄 Re-deploying {len(ready_for_redeployment)} fully charged drones: {ready_for_redeployment}")
                         _log_system(f"RE-DEPLOY: {len(ready_for_redeployment)} drones recharged and ready.")
