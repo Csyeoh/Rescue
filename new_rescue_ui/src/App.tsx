@@ -118,6 +118,7 @@ export default function App() {
   // --- State ---
   const [view, setView] = useState<'dashboard' | 'config'>('dashboard');
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
+  const [isAborting, setIsAborting] = useState(false);
   const [isMapGenerated, setIsMapGenerated] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isLogOpen, setIsLogOpen] = useState(true);
@@ -532,11 +533,25 @@ export default function App() {
           }
           addLog('COMMAND', 'Deploying swarm from Central Base.', 'info');
           setIsSimulationRunning(true);
+          setIsAborting(false);
         } catch (e: any) {
           addLog('SYSTEM', `Start mission failed: ${e?.message ?? String(e)}`, 'error');
         }
       } else {
-        addLog('COMMAND', 'Abort not implemented. Use Ctrl+C to stop backend.', 'warning');
+        // ABORT MISSION LOGIC
+        setIsAborting(true);
+        try {
+          const r = await fetch(`${API_BASE}/api/abort`, { method: 'POST' });
+          if (r.ok) {
+            addLog('COMMAND', 'ABORT SIGNAL SENT: Recalling all drones.', 'warning');
+          } else {
+            addLog('SYSTEM', 'Abort failed.', 'error');
+            setIsAborting(false);
+          }
+        } catch (e) {
+          addLog('SYSTEM', 'Abort request failed.', 'error');
+          setIsAborting(false);
+        }
       }
     })();
   };
@@ -589,14 +604,15 @@ export default function App() {
           </div>
           <button 
             onClick={toggleSimulation}
+            disabled={isAborting}
             className={`flex items-center gap-2 px-8 py-3 rounded-xl font-black transition-all transform active:scale-95 shadow-lg ${
               isSimulationRunning 
                 ? 'bg-alert-red text-white hover:bg-alert-orange' 
                 : 'bg-alert-yellow text-neutral-dark hover:brightness-105'
-            }`}
+            } ${isAborting ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
             {isSimulationRunning ? <Square size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
-            {isSimulationRunning ? 'ABORT MISSION' : 'DEPLOY SWARM'}
+            {isSimulationRunning ? (isAborting ? 'ABORTING...' : 'ABORT MISSION') : 'DEPLOY SWARM'}
           </button>
         </div>
       </header>
@@ -701,6 +717,14 @@ export default function App() {
                 >
                   <MapIcon size={14} />
                   {isGenerating ? 'GENERATING...' : 'GENERATE RANDOM MAP'}
+                </button>
+
+                <button 
+                  onClick={() => resetMission(config)}
+                  className="w-full mt-2 flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-black text-xs transition-all active:scale-95"
+                >
+                  <Activity size={14} />
+                  RESET SIMULATION
                 </button>
               </div>
             </div>

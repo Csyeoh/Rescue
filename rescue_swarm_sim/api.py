@@ -347,17 +347,40 @@ def get_mission_data():
     conn.close()
     return {"total_survivors": total, "found_survivors": found, "mission_status": "ACTIVE" if found < total else "COMPLETE"}
 
+@app.post("/api/abort")
+def abort_mission():
+    """Aborts the mission by clearing waypoints and sending drones to (9,9)."""
+    with database.DB_WRITE_LOCK:
+        conn = database._connect()
+        cursor = conn.cursor()
+        # 1. Clear all existing waypoints
+        cursor.execute("DELETE FROM drone_waypoints")
+        
+        # 2. Get all currently active drones
+        cursor.execute("SELECT drone_id FROM drones")
+        drones = [row[0] for row in cursor.fetchall()]
+        
+        # 3. Assign RTB waypoint (9, 9) for every drone
+        for d_id in drones:
+            cursor.execute("INSERT INTO drone_waypoints (drone_id, seq, x, y, is_done) VALUES (?, 0, 9, 9, 0)", (d_id,))
+        
+        cursor.execute("INSERT INTO logs (drone_id, message) VALUES ('SYSTEM', '🛑 MISSION ABORTED: Drones returning to base.')")
+        conn.commit()
+        conn.close()
+    return {"status": "success", "message": "Mission aborting. Drones returning to base."}
+
 @app.post("/api/reset")
 def reset_simulation():
     """Wipes the database and resets the simulation state."""
     with database.DB_WRITE_LOCK:
         conn = database._connect()
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM drone_waypoints")
-        cursor.execute("DELETE FROM survivors")
-        cursor.execute("DELETE FROM answer_plane")
-        cursor.execute("DELETE FROM question_plane")
         cursor.execute("DELETE FROM drones")
+        cursor.execute("DELETE FROM survivors")
+        cursor.execute("DELETE FROM drone_waypoints")
+        cursor.execute("DELETE FROM answer_plane")
+        # Optional: also clear other runtime tables
+        cursor.execute("DELETE FROM question_plane")
         cursor.execute("DELETE FROM logs")
         cursor.execute("DELETE FROM drone_zones")
         cursor.execute("DELETE FROM cell_weights")
