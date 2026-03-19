@@ -382,6 +382,11 @@ export default function App() {
           const agent_logs = Array.isArray(payload.logs) ? payload.logs : [];
           const survivors = Array.isArray(payload.survivors) ? payload.survivors : [];
 
+          // AUTO-STOP UI: If drones disappear after a mission was running, the simulation has reset.
+          if (isSimulationRunning && drone_states.length === 0 && revealedCells > 10) {
+            setIsSimulationRunning(false);
+          }
+
           setDrones((prev) => {
             const prevById = new Map<string, DroneStatus>(prev.map((d) => [d.id, d] as [string, DroneStatus]));
             return drone_states.map((ds: any) => {

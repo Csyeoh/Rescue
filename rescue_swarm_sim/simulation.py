@@ -48,6 +48,7 @@ class DroneAgent(Agent):
             return
         cx, cy, battery = curr
         
+        # DOCKING FIX: Only dock if EXACTLY at 9,9
         if cx == 9 and cy == 9:
             # Check for any pending waypoints in DB
             cursor.execute("SELECT COUNT(*) FROM drone_waypoints WHERE drone_id=? AND is_done=0", (self.custom_id,))
@@ -66,6 +67,10 @@ class DroneAgent(Agent):
                     self.status = "DOCKED"
                     conn.close()
                     return # Silent return, no logging or movement
+        else:
+            # Reset DOCKED status if we move away from base (e.g. on new mission)
+            if self.status == "DOCKED":
+                self.status = "ACTIVE"
 
         # 0. Get current position and battery from DB first
         self.battery = battery
@@ -248,17 +253,26 @@ class DisasterZoneModel(Model):
         self.spawn_ai_survivors(ai_survivors, num_survivors)
         self.sync_terrain_to_db()
 
-    def _clear_old_mission_data(self):
+    def _clear_old_mission_data(self, keep_map=False):
         """
-        Critical Fix 2: Do NOT delete drone_waypoints or drone_zones.
-        This allows AI pre-calculations to persist across simulation boot.
+        Critical Fix 2: Optionally preserve map data (obstacles/survivors) across missions.
         """
         conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
         cursor = conn.cursor()
-        cursor.execute("DELETE FROM question_plane")
-        cursor.execute("DELETE FROM answer_plane")
+        
+        if not keep_map:
+            cursor.execute("DELETE FROM question_plane")
+            cursor.execute("DELETE FROM answer_plane")
+            cursor.execute("DELETE FROM survivors")
+        else:
+            # If keeping map, just reset the discovery status on the drone map
+            cursor.execute("UPDATE answer_plane SET obstacle_discovered=0, is_scanned=0")
+            # Survivors remain discovered or reset? 
+            # The user said "survivor get remain", so we leave them as is.
+            # To reset their discovery status:
+            cursor.execute("UPDATE survivors SET is_discovered=0")
+
         cursor.execute("DELETE FROM drones")
-        cursor.execute("DELETE FROM survivors")
         cursor.execute("DELETE FROM logs")
         # Removed DELETE for waypoints and zones
         conn.commit()
@@ -327,14 +341,17 @@ class DisasterZoneModel(Model):
                     self.reset_counter = 0 # New counter to delay the reset
                     database.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued. Initiating global RTB.")
 
-                # Check if all drones are DOCKED
+                # Check if all drones are DOCKED AND at base
                 drones = [a for a in self.schedule.agents if isinstance(a, DroneAgent)]
-                if drones and all(a.status == "DOCKED" for a in drones):
+                if drones and all(a.status == "DOCKED" and a.pos == (9, 9) for a in drones):
                     self.reset_counter += 1
-                    if self.reset_counter > 10: # Wait 10 ticks (5 seconds) before resetting
-                        database.log_action("SYSTEM", "♻️ All drones DOCKED. Auto-resetting simulation for next mission.")
+                    if self.reset_counter == 1:
+                        database.log_action("SYSTEM", "🏁 All drones have returned to (9,9). Preparing final mission report.")
+                    
+                    if self.reset_counter > 20: # Wait 20 ticks (10 seconds) to ensure everything is synced
+                        database.log_action("SYSTEM", "♻️ MISSION COMPLETE. Auto-resetting for next deployment.")
                         print("♻️ All drones DOCKED. Auto-resetting simulation.")
-                        self._clear_old_mission_data()
+                        self._clear_old_mission_data(keep_map=True)
                         # Clear waypoints and zones explicitly for a full reset
                         with database.DB_WRITE_LOCK:
                             conn_reset = database._connect()

@@ -1,88 +1,131 @@
-12:12:24 AM
+1:08:47 AM
 [drone_1]
 COMMAND: Received 40 new waypoints.
 
-12:12:24 AM
+1:08:47 AM
 [SYSTEM]
 Central Agent: Analyzing State and partitioning zones...
 
-12:12:24 AM
+1:08:47 AM
 [SYSTEM]
 RE-DEPLOY: 5 drones recharged and ready.
 
-12:12:24 AM
+1:08:48 AM
+[SYSTEM]
+🏁 All drones have returned to (9,9). Preparing final mission report.
+
+1:08:48 AM
 [SYSTEM]
 🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.
 
-12:12:24 AM
+1:08:48 AM
 [SYSTEM]
 🎉 MISSION ACCOMPLISHED! All survivors rescued. Initiating global RTB.
 
-12:12:24 AM
+1:08:48 AM
+[drone_5]
+Survivor spotted at (17, 4)!
+
+1:08:48 AM
 [SYSTEM]
-STRATEGY: The greedy weighted BFS partition makes strategic sense because it optimizes drone battery levels and coverage limits by assigning more waypoints to drones with higher terrain density. This ensures that high-priority areas are covered efficiently, while minimizing the risk of drone exhaustion. By doing so, we maximize our chances of completing the mission objectives within the given time frame.
+STRATEGY: The Greedy Weighted BFS partition makes strategic sense because it optimizes drone battery levels by assigning waypoints based on terrain density. This approach ensures that each drone covers the most critical areas while minimizing energy expenditure. By doing so, we maximize our chances of completing the mission within the given time frame and with available resources.
 
-12:12:24 AM
+1:08:48 AM
+[drone_4]
+Survivor spotted at (16, 3)!
+
+1:08:48 AM
 [drone_3]
-Survivor spotted at (6, 16)!
+Survivor spotted at (2, 15)!
 
-12:12:24 AM
+1:08:48 AM
+[drone_3]
+Survivor spotted at (3, 16)!
+
+1:08:48 AM
+[drone_4]
+Survivor spotted at (13, 7)!
+
+1:08:48 AM
+[drone_2]
+Survivor spotted at (6, 6)!
+
+1:08:48 AM
+[drone_2]
+Survivor spotted at (7, 7)!
+
+1:08:48 AM
+[drone_4]
+Survivor spotted at (8, 7)!
+
+1:08:48 AM
+[drone_5]
+Survivor spotted at (11, 11)!
+
+1:08:48 AM
 [drone_4]
 COMMAND: Received 40 new waypoints.
 
-12:12:24 AM
+1:08:48 AM
 [drone_3]
 COMMAND: Received 40 new waypoints.
 
-12:12:24 AM
+1:08:48 AM
 [drone_2]
 COMMAND: Received 40 new waypoints.
 
-12:12:24 AM
+1:08:48 AM
+[drone_5]
+Survivor spotted at (10, 10)!
+
+1:08:48 AM
 [drone_5]
 COMMAND: Received 40 new waypoints.
 
-12:12:24 AM
+1:08:48 AM
 [drone_1]
 COMMAND: Received 40 new waypoints.
 
-12:12:24 AM
+1:08:48 AM
 [SYSTEM]
 Central Agent: Analyzing State and partitioning zones...
 
-12:12:24 AM
+1:08:48 AM
 [SYSTEM]
 RE-DEPLOY: 5 drones recharged and ready.
 
 --Mission Log from UI--
 
-D:\project\rescue\venv\Lib\site-packages\crewai\crew.py:1289: DeprecationWarning: deprecated
-  and hasattr(agent, "multimodal")
-D:\project\rescue\venv\Lib\site-packages\crewai\crew.py:1290: DeprecationWarning: deprecated
-  and getattr(agent, "multimodal", False)
-[FLOW] Writing 40 waypoints for drone_3
-[FLOW] Writing 40 waypoints for drone_4
 [FLOW] Execution complete.
 ╭───────────────────────────────────────────────── ✅ Flow Completion ─────────────────────────────────────────────────╮
 │                                                                                                                      │
 │  Flow Execution Completed                                                                                            │
 │  Name: SwarmCommanderFlow                                                                                            │
-│  ID: 17ca2594-abfa-4561-a718-b6295d40c79a                                                                            │
+│  ID: 3fcb27ab-a271-43cf-a270-021ede1c16f7                                                                            │
 │                                                                                                                      │
 │                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 DEBUG: Drone drone_4 NO PATH to (10, 8). Discarding.
-DEBUG: Drone drone_2 NO PATH to (8, 6). Discarding.
+DEBUG: Drone drone_2 NO PATH to (9, 7). Discarding.
+DEBUG: Drone drone_1 NO PATH to (7, 9). Discarding.
 DEBUG: Drone drone_3 NO PATH to (6, 12). Discarding.
-DEBUG: Drone drone_5 NO PATH to (13, 11). Discarding.
-DEBUG: Drone drone_1 NO PATH to (1, 9). Discarding.
-DEBUG: Drone drone_4 NO PATH to (12, 6). Discarding.
-DEBUG: Drone drone_3 NO PATH to (4, 12). Discarding.
-DEBUG: Drone drone_4 NO PATH to (12, 2). Discarding.
-DEBUG: Drone drone_2 NO PATH to (3, 5). Discarding.
-DEBUG: Drone drone_2 NO PATH to (4, 0). Discarding.
-DEBUG: Drone drone_3 NO PATH to (7, 13). Discarding.
+DEBUG: Drone drone_1 NO PATH to (3, 7). Discarding.
+DEBUG: Drone drone_5 NO PATH to (16, 10). Discarding.
+DEBUG: Drone drone_5 NO PATH to (18, 10). Discarding.
+DEBUG: Drone drone_2 NO PATH to (8, 0). Discarding.
+DEBUG: Drone drone_2 NO PATH to (0, 0). Discarding.
+DEBUG: Drone drone_2 NO PATH to (2, 0). Discarding.
+DEBUG: Drone drone_1 NO PATH to (0, 12). Discarding.
+DEBUG: Drone drone_5 NO PATH to (17, 13). Discarding.
+DEBUG: Drone drone_3 NO PATH to (5, 19). Discarding.
+DEBUG: Drone drone_2 NO PATH to (5, 5). Discarding.
+DEBUG: Drone drone_3 NO PATH to (8, 16). Discarding.
+DEBUG: Drone drone_3 NO PATH to (6, 16). Discarding.
+DEBUG: Drone drone_1 NO PATH to (0, 4). Discarding.
+DEBUG: Drone drone_5 NO PATH to (16, 6). Discarding.
 🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.
+♻️ All drones DOCKED. Auto-resetting simulation.
+♻️ Simulation Reset detected. Clearing mission state.
 
 -- log from terminal --

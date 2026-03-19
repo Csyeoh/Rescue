@@ -83,15 +83,9 @@ def generate_map(config: SimulationConfig):
 @app.post("/api/start_mission")
 def start_mission(config: SimulationConfig):
     """Receives the deploy signal and boots up the background engine."""
-    # Fixed: Removed Optional to ensure config is parsed correctly
     cfg_dict = config.model_dump() if hasattr(config, 'model_dump') else config.dict()
-    
     simulation.initialize_world(cfg_dict, start_sim=True)
-        
-    return {
-        "status": "success", 
-        "message": "Swarm Heartbeat Active."
-    }
+    return {"status": "success", "message": "Swarm Heartbeat Active."}
 
 # ==========================================
 # 3. GET ENDPOINT (Broadcasts the Live World)
@@ -109,10 +103,16 @@ def get_world_state():
         drones = [{"id": row[0], "x": row[1], "y": row[2], "battery": row[3]} for row in cursor.fetchall()]
         
         # 2. Fetch survivor data
+        cursor.execute("SELECT COUNT(*), SUM(is_discovered) FROM survivors")
+        surv_row = cursor.fetchone()
+        total_s = surv_row[0] if surv_row else 0
+        found_s = surv_row[1] if surv_row and surv_row[1] is not None else 0
+        is_mission_complete = (total_s > 0 and total_s == found_s)
+
         cursor.execute("SELECT survivor_id, x, y, is_discovered FROM survivors")
         survivors = [{"id": row[0], "x": row[1], "y": row[2], "discovered": bool(row[3])} for row in cursor.fetchall()]
         
-        # 3. Fetch terrain data (FIX: Using a.is_scanned for 'discovered' flag)
+        # 3. Fetch terrain data
         try:
             cursor.execute('''
                 SELECT q.x, q.y, q.altitude, q.is_obstacle, q.terrain_type, a.obstacle_discovered, a.is_scanned 
@@ -124,17 +124,16 @@ def get_world_state():
                     "x": row[0], "y": row[1], "altitude": row[2], 
                     "is_obstacle": bool(row[3]), "terrain_type": row[4], 
                     "obstacle_discovered": bool(row[5]),
-                    "discovered": bool(row[6]) # Dynamic Fog of War
+                    "discovered": bool(row[6])
                 }
                 for row in cursor.fetchall()
             ]
         except sqlite3.OperationalError:
             terrain = []
             
-        # Grid is fixed to 20x20
         grid_w, grid_h = 20, 20
             
-        # 4. Fetch logs (limit 50 recent)
+        # 4. Fetch logs
         cursor.execute("SELECT timestamp, drone_id, message FROM logs ORDER BY id DESC LIMIT 50")
         logs = [{"time": row[0], "drone": row[1], "message": row[2]} for row in cursor.fetchall()]
 
@@ -145,7 +144,8 @@ def get_world_state():
             "terrain": terrain,
             "drones": drones,
             "survivors": survivors,
-            "logs": logs
+            "logs": logs,
+            "is_mission_complete": is_mission_complete
         }
     except Exception as e:
         return {"error": str(e)}
@@ -178,7 +178,6 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             try:
                 state = get_world_state()
-                # Fixed: Wrapped state in type: tick_update to satisfy UI requirements
                 await websocket.send_json({"type": "tick_update", "payload": state})
             except RuntimeError as e:
                 break 
@@ -186,7 +185,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 if "close message" in str(e):
                     break
                 print(f"WS Loop Error: {e}")
-            
             await asyncio.sleep(0.5) 
     except WebSocketDisconnect:
         pass 
@@ -196,10 +194,6 @@ async def websocket_endpoint(websocket: WebSocket):
         except:
             pass
 
-# ==========================================
-# 4. MCP ENDPOINTS (Bridge to Simulation)
-# ==========================================
-# Fixed: Removed prefix here to allow double-routing in app.include_router
 mcp_router = APIRouter()
 
 @mcp_router.get("/drones")
@@ -375,7 +369,6 @@ def reset_simulation():
     
     return {"status": "success", "message": "Simulation database reset."}
 
-# Implementation of double-routing to support both /api/... and /api/mcp/...
 app.include_router(mcp_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api/mcp")
 
