@@ -14,5 +14,6 @@ REAL-WORLD LOGIC RULES:
    - If a survivor is placed on the EXACT same x,y coordinate as a building, they are considered trapped INSIDE the building.
    - Never put two survivors on the exact same coordinate.
 
-Ensure x and y are strictly between 0 and 19.
+5. Survivor Exclusion Zone: Survivors MUST NOT be placed in the four extreme corners of the map: (0,0), (0,19), (19,0), and (19,19).
+   - Ensure x and y are strictly between 0 and 19.
 """

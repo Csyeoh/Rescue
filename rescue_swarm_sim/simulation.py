@@ -50,6 +50,10 @@ class DroneAgent(Agent):
         start = (cx, cy)
         base_pos = (9, 9)
 
+        # NEW: Global RTB Override
+        if getattr(self.model, "mission_complete", False):
+            self.priority_searching_list = [] # Clear local BFS targets to allow RTB waypoint to take over
+
         # 1. BINGO FUEL CHECK (Survival Reflex)
         # Calculate distance to base using current knowledge
         obstacles = autopilot._read_obstacle_set(conn)
@@ -283,7 +287,10 @@ class DisasterZoneModel(Model):
         database.sync_terrain(terrain_data)
 
     def step(self):
-        conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+        """
+        Modified step() to allow drones to return to base after mission completion.
+        """
+        conn = database._connect()
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*), SUM(is_discovered) FROM survivors")
         row = cursor.fetchone()
@@ -294,8 +301,8 @@ class DisasterZoneModel(Model):
             if total > 0 and total == found:
                 if not getattr(self, "mission_complete", False):
                     self.mission_complete = True
-                    database.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued.")
-                return
+                    database.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued. Initiating global RTB.")
+                # Removed early return so drones can still move during RTB Phase
 
         self.tick_count += 1
         self.schedule.step() 

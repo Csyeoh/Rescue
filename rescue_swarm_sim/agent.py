@@ -34,50 +34,47 @@ def _run_flow_orchestrator():
 def run_swarm_commander():
     _log_system("Central Intelligence and Drone Autopilot online.")
     last_check_time = 0.0
+    mission_complete = False
 
     while True:
         try:
             # ── PHASE 0: Check Win Condition ─
-            conn = database._connect()
-            c = conn.cursor()
-            c.execute("SELECT COUNT(*), SUM(is_discovered) FROM survivors")
-            row = c.fetchone()
-            conn.close()
+            if not mission_complete:
+                conn = database._connect()
+                c = conn.cursor()
+                c.execute("SELECT COUNT(*), SUM(is_discovered) FROM survivors")
+                row = c.fetchone()
+                conn.close()
 
-            mission_complete = False
-            if row:
-                total_s = row[0]
-                found_s = row[1] if row[1] is not None else 0
-                if total_s > 0 and total_s == found_s:
+                if row and row[0] > 0 and row[0] == (row[1] if row[1] is not None else 0):
+                    print("🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.")
+                    
+                    with database.DB_WRITE_LOCK:
+                        conn = database._connect()
+                        cursor = conn.cursor()
+                        
+                        # 1. Clear all existing waypoints
+                        cursor.execute("DELETE FROM drone_waypoints")
+                        
+                        # 2. Get all active drones
+                        cursor.execute("SELECT drone_id FROM drones WHERE is_active=1")
+                        drones = [r[0] for r in cursor.fetchall()]
+                        
+                        # 3. Assign RTB waypoint (9, 9)
+                        for d_id in drones:
+                            cursor.execute("INSERT INTO drone_waypoints (drone_id, seq, x, y, is_done) VALUES (?, 0, 9, 9, 0)", (d_id,))
+                        
+                        # 4. Log the accomplishment
+                        cursor.execute("INSERT INTO logs (drone_id, message) VALUES ('SYSTEM', '🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.')")
+                        
+                        conn.commit()
+                        conn.close()
+                    
                     mission_complete = True
 
             if mission_complete:
-                # BUG FIX: Mission Accomplished RTB Sequence
-                print("🎉 MISSION ACCOMPLISHED: Initiating RTB Protocol.")
-                
-                with database.DB_WRITE_LOCK:
-                    conn = database._connect()
-                    cursor = conn.cursor()
-                    
-                    # 1. Clear all existing waypoints
-                    cursor.execute("DELETE FROM drone_waypoints")
-                    
-                    # 2. Get all active drones
-                    cursor.execute("SELECT drone_id FROM drones WHERE is_active=1")
-                    drones = [r[0] for r in cursor.fetchall()]
-                    
-                    # 3. Assign RTB waypoint (9, 9)
-                    for d_id in drones:
-                        cursor.execute("INSERT INTO drone_waypoints (drone_id, seq, x, y, is_done) VALUES (?, 0, 9, 9, 0)", (d_id,))
-                    
-                    # 4. Log the accomplishment
-                    cursor.execute("INSERT INTO logs (drone_id, message) VALUES ('SYSTEM', '🎉 MISSION ACCOMPLISHED: All drones RTB.')")
-                    
-                    conn.commit()
-                    conn.close()
-                
-                print("✅ RTB Waypoints assigned. Agent shutting down.")
-                break # Exit the loop and shut down the thread
+                time.sleep(5.0)
+                continue
 
             # ── PHASE 1: Deterministic Autopilot (always runs, never blocked) ─
             # autopilot_tick()
