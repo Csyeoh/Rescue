@@ -118,6 +118,8 @@ export default function App() {
   // --- State ---
   const [view, setView] = useState<'dashboard' | 'config'>('dashboard');
   const [isSimulationRunning, setIsSimulationRunning] = useState(false);
+  const [isMapGenerated, setIsMapGenerated] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isLogOpen, setIsLogOpen] = useState(true);
   const [isSwarmPanelOpen, setIsSwarmPanelOpen] = useState(true);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -197,6 +199,8 @@ export default function App() {
     setRevealedCells(0);
     setIsSimulationRunning(false);
     setMapData(null);
+    setIsMapGenerated(false);
+    setIsGenerating(false);
 
     const initialDrones: DroneStatus[] = Array.from({ length: newConfig.droneCount }).map((_, i) => ({
       id: `drone_${i + 1}`,
@@ -294,6 +298,7 @@ export default function App() {
   };
 
   const generateMapPreview = async (cfg = config): Promise<any | null> => {
+    setIsGenerating(true);
     try {
       const bcfg = toBackendConfig(cfg);
       const r = await fetch(`${API_BASE}/api/generate_map`, {
@@ -317,11 +322,14 @@ export default function App() {
       setRevealedCells(0);
       setSurvivorsFound(0);
       setSurvivorsDetected(0);
+      setIsMapGenerated(true);
       addLog('SYSTEM', 'Map preview generated. Awaiting deployment.', 'success');
       return json.map_data;
     } catch (e: any) {
       addLog('SYSTEM', `Generate map failed: ${e?.message ?? String(e)}`, 'error');
       return null;
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -499,8 +507,10 @@ export default function App() {
   const toggleSimulation = () => {
     (async () => {
       if (!isSimulationRunning) {
-        const currentMapData = mapData ?? await generateMapPreview(config);
-        if (!currentMapData) return;
+        if (!isMapGenerated || !mapData) {
+          alert('Warning: Please generate a map first before deploying the swarm!');
+          return;
+        }
         try {
           const bcfg = toBackendConfig(config);
           const r = await fetch(`${API_BASE}/api/start_mission`, {
@@ -512,7 +522,7 @@ export default function App() {
               drone_battery: bcfg.drone_battery,
               num_survivors: bcfg.num_survivors,
               obstacle_difficulty: bcfg.obstacle_difficulty,
-              map_data: currentMapData,
+              map_data: mapData,
             }),
           });
           const json = await r.json();
@@ -686,10 +696,11 @@ export default function App() {
                     resetMission(config);
                     void generateMapPreview(config);
                   }}
-                  className="w-full mt-4 flex items-center justify-center gap-2 bg-mint-bg hover:bg-azure-pale/30 text-azure-dark border border-azure-pale py-3 rounded-xl font-black text-xs transition-all active:scale-95"
+                  disabled={isGenerating}
+                  className={`w-full mt-4 flex items-center justify-center gap-2 bg-mint-bg hover:bg-azure-pale/30 text-azure-dark border border-azure-pale py-3 rounded-xl font-black text-xs transition-all active:scale-95 ${isGenerating ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <MapIcon size={14} />
-                  GENERATE RANDOM MAP
+                  {isGenerating ? 'GENERATING...' : 'GENERATE RANDOM MAP'}
                 </button>
               </div>
             </div>
