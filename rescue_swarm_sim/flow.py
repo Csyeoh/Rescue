@@ -130,15 +130,39 @@ class SwarmCommanderFlow(Flow[SwarmMissionState]):
             from crewai import Crew, Task
             _, commander = build_agents()
             
+            # 1. Gather distance metrics (Nearest-Neighbor benchmark)
+            # We calculate total Manhattan distance for each drone's assigned path.
+            drone_metrics = []
+            for did, wps in self.state.partition_assignments.items():
+                drone_obj = next((d for d in self.state.drones_info if d['id'] == did), None)
+                batt = drone_obj['battery'] if drone_obj else 100
+                
+                total_dist = 0
+                if wps:
+                    curr = (drone_obj['x'], drone_obj['y']) if drone_obj else (9, 9)
+                    for wp in wps:
+                        total_dist += abs(wp[0] - curr[0]) + abs(wp[1] - curr[1])
+                        curr = wp
+                
+                drone_metrics.append({
+                    "id": did,
+                    "battery": batt,
+                    "waypoint_count": len(wps),
+                    "estimated_distance": total_dist
+                })
+
             if self.state.is_initial_partition:
-                system_prompt = f"Initial Swarm Partition:\n"
-                for did, wps in self.state.partition_assignments.items():
-                    batt = next((d['battery'] for d in self.state.drones_info if d['id'] == did), 100)
-                    system_prompt += f"- Drone {did} (Battery {batt}%): Assigned {len(wps)} waypoints based on terrain density.\n"
+                system_prompt = f"Initial Swarm Partition Metrics:\n"
+                for m in drone_metrics:
+                    system_prompt += f"- Drone {m['id']}: Battery {m['battery']}%, Assigned {m['waypoint_count']} waypoints, Total Route: {m['estimated_distance']}m.\n"
                     
                 task_desc = f"""
-                Analyze the greedy weighted BFS partition above.
-                Write a brief Chain-of-Thought reasoning (max 3 sentences) explaining WHY 
+                Analyze the greedy weighted BFS partition metrics above.
+                
+                STRICT REQUIREMENT: You must explain your step-by-step logic before finalizing the plan. 
+                For example: 'Drone 1 has 80% battery and is assigned a 120m route, which is safe. Drone 2 has lower battery, so it gets the shorter 50m route.'
+                
+                Write a brief Chain-of-Thought reasoning (max 4 sentences) explaining WHY 
                 these assignments make strategic sense based on drone battery levels and coverage limits. 
                 Keep it in-character as the Swarm Commander logging a tactical decision.
                 Use the `log_mission_reasoning` tool to log your explanation.
@@ -147,13 +171,28 @@ class SwarmCommanderFlow(Flow[SwarmMissionState]):
                 {system_prompt}
                 """
             else:
-                event_str = ""
+                event_str = "Swarm Rebalance Metrics:\n"
                 for ev in self.state.rebalance_events:
-                    event_str += f"- Drone {ev['idle']} ({ev['idle_battery']}% batt) takes {ev['transferred_count']} cells from Drone {ev['burdened']} ({ev['burdened_battery']}% batt).\n"
+                    # Find estimated distance for the transferred waypoints
+                    idle_drone = next((d for d in self.state.drones_info if d['id'] == ev['idle']), None)
+                    # Note: state.partition_assignments already contains the transferred wps for the idle drone
+                    wps = self.state.partition_assignments.get(ev['idle'], [])
+                    total_dist = 0
+                    if wps:
+                        curr = (idle_drone['x'], idle_drone['y']) if idle_drone else (9, 9)
+                        for wp in wps:
+                            total_dist += abs(wp[0] - curr[0]) + abs(wp[1] - curr[1])
+                            curr = wp
+                    
+                    event_str += f"- Drone {ev['idle']} ({ev['idle_battery']}% batt) takes {ev['transferred_count']} cells ({total_dist}m) from Drone {ev['burdened']} ({ev['burdened_battery']}% batt).\n"
                     
                 task_desc = f"""
-                Analyze the swarm rebalance event below.
-                Write a brief Chain-of-Thought reasoning (max 3 sentences) explaining WHY this re-partitioning 
+                Analyze the swarm rebalance metrics below.
+                
+                STRICT REQUIREMENT: You must explain your step-by-step logic before finalizing the plan.
+                For example: 'Drone 1 has 80% battery and is assigned a 120m route, which is safe. Drone 2 has lower battery, so it gets the shorter 50m route.'
+
+                Write a brief Chain-of-Thought reasoning (max 4 sentences) explaining WHY this re-partitioning 
                 optimizes the mission timeline and respects battery constraints.
                 Keep it in-character as the Swarm Commander logging a tactical decision.
                 Use the `log_mission_reasoning` tool to log your explanation.
@@ -175,7 +214,12 @@ class SwarmCommanderFlow(Flow[SwarmMissionState]):
             )
             
             try:
-                crew.kickoff()
+                result = crew.kickoff()
+                # Capture the LLM's generated response to Agent_Mission_Log.txt
+                with open("Agent_Mission_Log.txt", "a", encoding="utf-8") as f:
+                    f.write(f"\n--- {time.ctime()} ---\n")
+                    f.write(str(result))
+                    f.write("\n")
             except Exception as e:
                 print(f"[FLOW WARNING] Strategy Agent completed but threw an output parsing error: {str(e)}")
             
