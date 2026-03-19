@@ -49,12 +49,12 @@ class SimpleSwarmController:
         self.rescue_crew = RescueCrew()
 
     def _get_exploration_stats(self, world) -> tuple[int, int]:
-        from simulation import CellAgent
+        from simulation import TerrainAgent
         total_explored_cells = len(getattr(world, "global_discovered_cells", set()))
         total_discovered_obstacles = 0
         for contents, _ in world.grid.coord_iter():
             for obj in contents:
-                if isinstance(obj, CellAgent) and obj.is_obstacle and obj.obstacle_discovered:
+                if isinstance(obj, TerrainAgent) and obj.is_obstacle and obj.obstacle_discovered:
                     total_discovered_obstacles += 1
         return total_discovered_obstacles, total_explored_cells
 

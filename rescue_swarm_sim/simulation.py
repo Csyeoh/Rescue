@@ -1,384 +1,370 @@
 from mesa import Agent, Model
 from mesa.space import MultiGrid
 from mesa.time import RandomActivation
+import database
+import sqlite3
+import random
 import time
 import threading
-import os
+import map_generator
+import traceback
+import autopilot
 
-class CellAgent(Agent):
-    """A static agent representing the terrain/building properties of a cell."""
-    def __init__(self, unique_id, model, altitude, b_height, is_ob, t_type, is_termal_aura = False):
-        super().__init__(unique_id, model)
-        # self.pos is set by the grid.place_agent call
+class TerrainAgent(Agent):
+    def __init__(self, custom_id, model, altitude=0.0, is_obstacle=False, terrain_type="terrain"):
+        super().__init__(custom_id, model)
+        self.custom_id = custom_id
         self.altitude = altitude
-        self.building_height = b_height
-        self.is_obstacle = is_ob
-        self.terrain_type = t_type
-        self.obstacle_discovered = False
-        self.assigned_drone = None
-        self.thermal_aura = is_termal_aura
+        self.is_obstacle = is_obstacle
+        self.terrain_type = terrain_type 
+        self.obstacle_discovered = False 
 
-class SurvivorAgent(Agent):
-    """A static agent representing a survivor to be found."""
-    def __init__(self, unique_id, model):
-        super().__init__(unique_id, model)
-        # self.pos is set by the grid.place_agent call
-        self.found = False
+    def step(self):
+        pass
 
 class DroneAgent(Agent):
-    """A dynamic agent that moves and consumes battery."""
-    def __init__(self, unique_id, model, battery):
-        super().__init__(unique_id, model)
+    def __init__(self, custom_id, model, initial_battery=100):
+        super().__init__(custom_id, model)
+        self.custom_id = custom_id 
+        self.battery = initial_battery
+        self.priority_searching_list = [] # Local state for decentralized logic
+        self.status = "IDLE"
+
+    def step(self):
+        """
+        Implementation of the fixed step() logic.
+        Prioritizes the local 'priority_searching_list' over the DB 'drone_waypoints'.
+        """
+        conn = database._connect()
+        cursor = conn.cursor()
+        
+        # 1. Check local search list first (Decentralized BFS)
+        target = None
+        seq = -1
+        
+        if self.priority_searching_list:
+            target = self.priority_searching_list[0] # Just peek
+            seq = 0 # Using local index
+            print(f"DEBUG: Drone {self.custom_id} using local BFS target {target}. Remaining: {len(self.priority_searching_list)}")
+        else:
+            # 2. Fallback to SQLite Waypoints (Centralized Strategy)
+            cursor.execute("""
+                SELECT seq, x, y FROM drone_waypoints 
+                WHERE drone_id=? AND is_done=0 
+                ORDER BY seq ASC LIMIT 1
+            """, (self.custom_id,))
+            wp = cursor.fetchone()
+            if wp:
+                seq, tx, ty = wp
+                target = (tx, ty)
+        
+        if not target:
+            conn.close()
+            return
+
+        # 3. Get current position from DB
+        cursor.execute("SELECT x, y, battery FROM drones WHERE drone_id=?", (self.custom_id,))
+        curr = cursor.fetchone()
+        if not curr:
+            conn.close()
+            return
+        cx, cy, battery = curr
         self.battery = battery
-        self.status = "SEARCHING" # IDLE, SEARCHING, RETURNING, CHARGING
-        self.priority_searching_list = []
-        self.thermal_memory = []
-        # Intent & history tracking (populated each tick by the flow)
-        self.pending_move: tuple | None = None   # (x, y) requested by LLM this tick
-        self.move_history: list = []             # [(tick, from_x, from_y, to_x, to_y), ...]
-        self.last_action: str = ""               # Last resolved action string
-        self.last_rationale: str = ""            # Last LLM rationale
+        start = (cx, cy)
+        
+        # If already at target, pop and move on
+        if start == target:
+            print(f"DEBUG: Drone {self.custom_id} already at {target}. Pop and mark done.")
+            if self.priority_searching_list:
+                self.priority_searching_list.pop(0)
+            else:
+                with database.DB_WRITE_LOCK:
+                    conn2 = database._connect()
+                    conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
+                    conn2.commit()
+                    conn2.close()
+            conn.close()
+            return
 
-    def _apply_move(self, new_position):
-        """Internal: physically moves the drone and drains battery. Called by resolve_intent only."""
-        self.model.grid.move_agent(self, new_position)
-        self.battery -= 1  # 1% per move rule
-
+        # 4. Pathfinding using discovered hazards
+        obstacles = autopilot._read_obstacle_set(conn)
+        conn.close()
+        
+        path = autopilot._a_star_path(start, target, obstacles)
+        
+        if path:
+            next_step = path[0]
+            print(f"DEBUG: Drone {self.custom_id} heading to {target}. Step: {next_step}")
+            
+            res = resolve_intent({
+                "drone_id": self.custom_id,
+                "action": "MOVE",
+                "target_x": next_step[0],
+                "target_y": next_step[1]
+            })
+            
+            if "Success" in res:
+                self.model.grid.move_agent(self, next_step)
+                if next_step == target:
+                    if self.priority_searching_list:
+                        self.priority_searching_list.pop(0)
+                    else:
+                        with database.DB_WRITE_LOCK:
+                            conn2 = database._connect()
+                            conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
+                            conn2.commit()
+                            conn2.close()
+            elif "Failure: Blocked" in res or "Collision" in res:
+                # Discard unreachable target to prevent infinite loops
+                print(f"DEBUG: Drone {self.custom_id} target {target} BLOCKED. Discarding.")
+                if self.priority_searching_list:
+                    self.priority_searching_list.pop(0)
+                else:
+                    with database.DB_WRITE_LOCK:
+                        conn2 = database._connect()
+                        conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
+                        conn2.commit()
+                        conn2.close()
+        else:
+            # Unreachable path (e.g., completely boxed in by known obstacles)
+            print(f"DEBUG: Drone {self.custom_id} NO PATH to {target}. Discarding.")
+            if self.priority_searching_list:
+                self.priority_searching_list.pop(0)
+            else:
+                with database.DB_WRITE_LOCK:
+                    conn2 = database._connect()
+                    conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
+                    conn2.commit()
+                    conn2.close()
 
 class DisasterZoneModel(Model):
     def __init__(self, config=None):
         super().__init__()
+        if config is None: config = {}
 
         self.width = 20
         self.height = 20
         self.tick_count = 0
+        
+        obstacle_diff = config.get("obstacle_difficulty", "med")
+        self.sim_diff = config.get("sim_difficulty", "easy")
+        num_survivors = config.get("num_survivors", 5)
         num_drones = config.get("num_drones", 2)
         start_battery = config.get("drone_battery", 100)
 
         self.grid = MultiGrid(self.width, self.height, torus=False)
         self.schedule = RandomActivation(self)
-        self.mission_logs = []
-        self.global_discovered_cells = set() # Global memory
         self._clear_old_mission_data()
-        
-        self.total_survivors = 0
-        self.found_survivors = 0
 
+        if obstacle_diff == "high": obstacle_prob = 0.25
+        elif obstacle_diff == "low": obstacle_prob = 0.05
+        else: obstacle_prob = 0.15
 
         map_data = config.get("map_data")
         if map_data:
             cells = map_data.get("cells", [])
             blueprint_dict = map_data.get("blueprint", {})
-            survivors = blueprint_dict.get("survivors", [])
+            ai_survivors = blueprint_dict.get("survivors", [])
         else:
-            print("ERROR: No map data provided. The simulator cannot start without a valid map.")
-            return
+            # Fallback
+            scenario_prompt = config.get("scenario", "")
+            if not scenario_prompt:
+                themes = ["A mixed urban layout with clusters of residential buildings."]
+                scenario_prompt = random.choice(themes)
+                
+            blueprint = map_generator.generate_semantic_blueprint(scenario_prompt, num_survivors)
+            cells = map_generator.build_terrain_matrix(blueprint, obstacle_prob, self.width, self.height)
+            ai_survivors = [{"x": s.x, "y": s.y} for s in blueprint.survivors] if blueprint else []
 
-        # Build the grid using the cells
         terrain_id = 0
-        
         for cell_data in cells:
             x, y = cell_data["x"], cell_data["y"]
             altitude = cell_data["altitude"]
-            building_height = cell_data.get("building_height", 0.0)
             is_ob = cell_data["is_obstacle"]
             t_type = cell_data["terrain_type"]
 
-            cell = CellAgent(f"terrain_{terrain_id}", self, altitude, building_height, is_ob, t_type)
+            cell = TerrainAgent(f"terrain_{terrain_id}", self, altitude, is_ob, t_type)
             self.grid.place_agent(cell, (x, y))
+            self.schedule.add(cell)
             terrain_id += 1
 
         for i in range(num_drones):
             self.spawn_drone(f"drone_{i+1}", 9, 9, start_battery)
 
-        self.spawn_survivors(survivors)
-        # self.sync_to_db()
-
-    def log_action(self, drone_id: str, message: str):
-        self.mission_logs.append({"drone_id": drone_id, "message": message, "tick": self.tick_count})
-        print(f"[SIM TICK {self.tick_count}] {drone_id}: {message}")
+        self.spawn_ai_survivors(ai_survivors, num_survivors)
+        self.sync_terrain_to_db()
 
     def _clear_old_mission_data(self):
-        # Deprecated logic since DB is removed.
-        pass
+        """
+        Critical Fix 2: Do NOT delete drone_waypoints or drone_zones.
+        This allows AI pre-calculations to persist across simulation boot.
+        """
+        conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM question_plane")
+        cursor.execute("DELETE FROM answer_plane")
+        cursor.execute("DELETE FROM drones")
+        cursor.execute("DELETE FROM survivors")
+        cursor.execute("DELETE FROM logs")
+        # Removed DELETE for waypoints and zones
+        conn.commit()
+        conn.close()
 
     def spawn_drone(self, custom_id, start_x, start_y, battery):
         drone = DroneAgent(custom_id, self, battery)
         self.grid.place_agent(drone, (start_x, start_y))
         self.schedule.add(drone)
+        
+        conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO drones (drone_id, x, y, battery, is_active, health_status) VALUES (?, ?, ?, ?, 1, 'OPTIMAL')", 
+                       (custom_id, start_x, start_y, battery))
+        conn.commit()
+        conn.close()
 
-    def spawn_survivors(self, survivors):
-        spawned = 0        
-        for s in survivors:
+    def spawn_ai_survivors(self, ai_survivors, fallback_count):
+        conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+        cursor = conn.cursor()
+        spawned = 0
+        used_coords = set([(9, 9)]) 
+        for s in ai_survivors:
             x, y = s.get("x", 0), s.get("y", 0)
-            # Create SurvivorAgent and place on grid
-            survivor = SurvivorAgent(f"survivor_{spawned+1}", self)
-            self.grid.place_agent(survivor, (x, y))
-            for dx, dy in [(1,0), (0, 1), (-1, 0), (0, -1)]:
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < self.grid.width and 0 <= ny < self.grid.height:
-                    for obj in self.grid.get_cell_list_contents([(nx, ny)]):
-                        if isinstance(obj, CellAgent):
-                            obj.thermal_aura = True
+            if not (0 <= x < 20 and 0 <= y < 20) or (x, y) in used_coords: continue
+            used_coords.add((x, y))
+            cursor.execute("INSERT OR IGNORE INTO survivors (survivor_id, x, y, is_discovered) VALUES (?, ?, ?, ?)",
+                           (f"survivor_{spawned+1}", x, y, False))
             spawned += 1
-            
-        self.total_survivors = spawned
+        while spawned < fallback_count:
+            x, y = random.randint(0, 19), random.randint(0, 19)
+            if (x, y) not in used_coords:
+                used_coords.add((x, y))
+                cursor.execute("INSERT OR IGNORE INTO survivors (survivor_id, x, y, is_discovered) VALUES (?, ?, ?, ?)",
+                               (f"survivor_{spawned+1}", x, y, False))
+                spawned += 1
+        conn.commit()
+        conn.close()
 
-    def sync_to_db(self):
-        """Deprecated."""
-        pass
+    def sync_terrain_to_db(self):
+        terrain_data = []
+        for agent in self.schedule.agents:
+            if isinstance(agent, TerrainAgent):
+                terrain_data.append((
+                    agent.pos[0], agent.pos[1], agent.altitude, 
+                    agent.is_obstacle, agent.terrain_type, agent.obstacle_discovered 
+                ))
+        database.sync_terrain(terrain_data)
 
     def step(self):
-        """Advances the physics simulation by 1 tick (1 second)."""    
-        found = 0
-        from simulation import SurvivorAgent
-        for contents, (x, y) in self.grid.coord_iter():
-            for obj in contents:
-                if isinstance(obj, SurvivorAgent) and obj.found:
-                    found += 1
-                    
-        self.found_survivors = found
+        conn = sqlite3.connect(database.DB_NAME, timeout=10.0)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*), SUM(is_discovered) FROM survivors")
+        row = cursor.fetchone()
+        conn.close()
 
-        # If everyone is found, freeze the simulation!
-        if self.total_survivors > 0 and self.total_survivors == self.found_survivors:
-            # We only want to log this once!
-            if not getattr(self, "mission_complete", False):
-                self.mission_complete = True
-                self.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued. Physics engine frozen.")
-            return 
-        # 2. NORMAL PHYSICS TICK (Only runs if mission is NOT complete)
+        if row:
+            total, found = row[0], (row[1] if row[1] is not None else 0)
+            if total > 0 and total == found:
+                if not getattr(self, "mission_complete", False):
+                    self.mission_complete = True
+                    database.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued.")
+                return
+
         self.tick_count += 1
-        self.schedule.step()
+        self.schedule.step() 
+        self.sync_terrain_to_db()
 
 # ==========================================
-# 🎯 INTENT RESOLVER
+# ⚙️ INTENT RESOLVER
 # ==========================================
-
-def resolve_intent(world: "DisasterZoneModel", intent: dict) -> dict:
+def resolve_intent(intent: dict):
     """
-    Atomically applies one DroneIntent dict to the Mesa environment.
-
-    Returns a map_update dict with only the cells that changed this tick,
-    plus the drone's new position and battery — ready for WS broadcast.
+    Bridge between agents and hardware.
+    Includes Fix 2 (No redundant logs) and Fix 3 (Passive Survivor Discovery).
     """
-    from simulation import DroneAgent, CellAgent, SurvivorAgent
-
-    result = {
-        "drone_id": intent.get("drone_id"),
-        "action": intent.get("action", "IDLE"),
-        "from": None,
-        "to": None,
-        "battery": None,
-        "new_status": intent.get("new_status"),
-        "map_updates": [],
-        "events": [],
-    }
-
-    if not world:
-        result["events"].append("ERROR: no simulation world")
-        return result
-
-    drone = None
-    for agent in world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == intent.get("drone_id"):
-            drone = agent
-            break
-
-    if not drone:
-        result["events"].append(f"ERROR: drone {intent.get('drone_id')} not found")
-        return result
-
-    action = intent.get("action", "IDLE")
-    drone.last_action = action
-    drone.last_rationale = intent.get("rationale", "")
-
-    # Apply status change if requested
-    new_status = intent.get("new_status")
-    if new_status and new_status in ("SEARCHING", "CHARGING", "RETURNING", "IDLE"):
-        drone.status = new_status
-
-    # Clear any pending move regardless
-    drone.pending_move = None
-
+    import database
+    import sqlite3
+    
+    drone_id = intent.get("drone_id")
+    action = intent.get("action")
+    tx, ty = intent.get("target_x"), intent.get("target_y")
+    
     if action == "MOVE":
-        tx, ty = intent.get("target_x"), intent.get("target_y")
-        if tx is None or ty is None:
-            result["events"].append("ERROR: MOVE action missing target_x/target_y")
-            return result
+        if not (0 <= tx < 20 and 0 <= ty < 20):
+            return "Failure: Coordinates out of bounds."
 
-        if not (0 <= tx < world.width and 0 <= ty < world.height):
-            result["events"].append(f"ERROR: target ({tx},{ty}) out of bounds")
-            return result
+        with database.DB_WRITE_LOCK:
+            conn = database._connect()
+            cursor = conn.cursor()
 
-        if drone.battery < 2:
-            result["events"].append(f"GROUNDED: {drone.unique_id} battery too low")
-            return result
+            # 1. Check battery
+            cursor.execute("SELECT battery FROM drones WHERE drone_id=?", (drone_id,))
+            drone_data = cursor.fetchone()
+            if not drone_data or drone_data[0] < 2:
+                conn.close()
+                return f"Failure: {drone_id} battery exhausted."
 
-        from_pos = drone.pos
-        if not from_pos:
-            result["events"].append("ERROR: drone has no position")
-            return result
+            # 2. Check for physical obstacles
+            cursor.execute("SELECT is_obstacle FROM question_plane WHERE x=? AND y=?", (tx, ty))
+            grid_data = cursor.fetchone()
+            if grid_data and grid_data[0] == 1:
+                cursor.execute("UPDATE answer_plane SET obstacle_discovered=1, is_scanned=1 WHERE x=? AND y=?", (tx, ty))
+                cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, f"CRITICAL: Collision at ({tx}, {ty})!"))
+                conn.commit()
+                conn.close()
+                return "Failure: Blocked."
 
-        cx, cy = from_pos
-        pre_adjacent = [(cx, cy - 1), (cx, cy + 1), (cx - 1, cy), (cx + 1, cy)]
-        for ax, ay in pre_adjacent:
-            if 0 <= ax < world.width and 0 <= ay < world.height:
-                result["map_updates"].append({"x": ax, "y": ay, "discovered": True})
-                contents = world.grid.get_cell_list_contents([(ax, ay)])
-                survivor_present = any(isinstance(o, SurvivorAgent) and not o.found for o in contents)
-                if survivor_present:
-                    result["map_updates"].append({"x": ax, "y": ay, "survivor_detected": True})
-                    result["events"].append(f"SURVIVOR DETECTED adjacent at ({ax},{ay})")
-                for obj in contents:
-                    if isinstance(obj, CellAgent) and obj.is_obstacle and not obj.obstacle_discovered:
-                        obj.obstacle_discovered = True
-                        result["map_updates"].append({"x": ax, "y": ay, "obstacle_discovered": True})
-                    if isinstance(obj, CellAgent) and getattr(obj, "thermal_aura", False):
-                        sv_at = world.grid.get_cell_list_contents([(ax, ay)])
-                        already_found = any(isinstance(s, SurvivorAgent) and s.found for s in sv_at)
-                        if not already_found:
-                            result["map_updates"].append({"x": ax, "y": ay, "thermal_aura": True})
-                            if (ax, ay) not in drone.thermal_memory:
-                                drone.thermal_memory.append((ax, ay))
-                                result["events"].append(f"THERMAL ALERT at ({ax},{ay}) added to memory")
-        orig_tx, orig_ty = tx, ty
-        if abs(cx - tx) + abs(cy - ty) != 1:
-            candidates = []
-            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                nx, ny = cx + dx, cy + dy
-                if 0 <= nx < world.width and 0 <= ny < world.height:
-                    is_blocked = any(
-                        isinstance(o, CellAgent) and getattr(o, "is_obstacle", False)
-                        for o in world.grid.get_cell_list_contents([(nx, ny)])
-                    )
-                    if not is_blocked:
-                        dist = abs(nx - orig_tx) + abs(ny - orig_ty)
-                        candidates.append((dist, nx, ny))
-            if not candidates:
-                result["events"].append("ERROR: no valid adjacent move (surrounded)")
-                return result
-            candidates.sort(key=lambda t: t[0])
-            tx, ty = candidates[0][1], candidates[0][2]
-            result["events"].append(
-                f"WARN: non-adjacent MOVE requested to ({orig_tx},{orig_ty}); clamped to 1-step ({tx},{ty})"
-            )
+            # 3. Successful move logic (FIX 2: Removed 'Moved to sector' log)
+            new_battery = 100 if (tx == 9 and ty == 9) else drone_data[0] - 2
+            cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (tx, ty, new_battery, drone_id))
+            cursor.execute("UPDATE answer_plane SET is_scanned=1 WHERE x=? AND y=?", (tx, ty))
 
-        # Check obstacle
-        for obj in world.grid.get_cell_list_contents([(tx, ty)]):
-            if isinstance(obj, CellAgent) and getattr(obj, "is_obstacle", False):
-                obj.obstacle_discovered = True
-                result["map_updates"].append({"x": tx, "y": ty, "obstacle_discovered": True})
-                result["events"].append(f"BLOCKED: ({tx},{ty}) is an obstacle")
-                return result
+            # 4. Passive Sensors (FIX 3: Auto-Discovery of survivors in adjacent scanned cells)
+            adj = [(tx, ty-1), (tx, ty+1), (tx-1, ty), (tx+1, ty)]
+            for ax, ay in adj:
+                if 0 <= ax < 20 and 0 <= ay < 20:
+                    cursor.execute("UPDATE answer_plane SET is_scanned=1 WHERE x=? AND y=?", (ax, ay))
+                    cursor.execute("SELECT survivor_id FROM survivors WHERE x=? AND y=? AND is_discovered=0", (ax, ay))
+                    surv = cursor.fetchone()
+                    if surv:
+                        cursor.execute("UPDATE survivors SET is_discovered=1 WHERE survivor_id=?", (surv[0],))
+                        cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, f"Survivor spotted at ({ax}, {ay})!"))
 
-        result["from"] = {"x": from_pos[0], "y": from_pos[1]} if from_pos else None
-
-        drone._apply_move((tx, ty))
-        drone.move_history.append((world.tick_count, from_pos[0] if from_pos else 9, from_pos[1] if from_pos else 9, tx, ty))
-
-        result["to"] = {"x": tx, "y": ty}
-        result["battery"] = drone.battery
-
-        # Base camp auto-recharge
-        if tx == 9 and ty == 9:
-            drone.battery = 100
-            drone.status = "CHARGING"
-            result["battery"] = drone.battery
-            result["new_status"] = "CHARGING"
-            result["events"].append("Returned to base. Recharging to 100%.")
-
-        post_adjacent = [(tx, ty - 1), (tx, ty + 1), (tx - 1, ty), (tx + 1, ty)]
-        for ax, ay in post_adjacent:
-            if 0 <= ax < world.width and 0 <= ay < world.height:
-                result["map_updates"].append({"x": ax, "y": ay, "discovered": True})
-                contents = world.grid.get_cell_list_contents([(ax, ay)])
-                survivor_present = any(isinstance(o, SurvivorAgent) and not o.found for o in contents)
-                if survivor_present:
-                    result["map_updates"].append({"x": ax, "y": ay, "survivor_detected": True})
-                    result["events"].append(f"SURVIVOR DETECTED adjacent at ({ax},{ay})")
-                for obj in contents:
-                    if isinstance(obj, CellAgent) and obj.is_obstacle and not obj.obstacle_discovered:
-                        obj.obstacle_discovered = True
-                        result["map_updates"].append({"x": ax, "y": ay, "obstacle_discovered": True})
-                    if isinstance(obj, CellAgent) and getattr(obj, "thermal_aura", False):
-                        sv_at = world.grid.get_cell_list_contents([(ax, ay)])
-                        already_found = any(isinstance(s, SurvivorAgent) and s.found for s in sv_at)
-                        if not already_found:
-                            result["map_updates"].append({"x": ax, "y": ay, "thermal_aura": True})
-                            if (ax, ay) not in drone.thermal_memory:
-                                drone.thermal_memory.append((ax, ay))
-                                result["events"].append(f"THERMAL ALERT at ({ax},{ay}) added to memory")
-
-        world.log_action(drone.unique_id, f"Moved from {from_pos} to ({tx},{ty}). Battery: {drone.battery}%")
-        
-        # Auto-discover current cell on arrival to keep search logic efficient
-        world.global_discovered_cells.add((tx, ty))
-        result["map_updates"].append({"x": tx, "y": ty, "discovered": True})
-
+            conn.commit()
+            conn.close()
+            return f"Success: Moved to ({tx}, {ty})"
+            
     elif action == "THERMAL_SCAN":
-        if not drone.pos:
-            result["events"].append("ERROR: drone has no position")
-            return result
-        dx, dy = drone.pos
-        contents = world.grid.get_cell_list_contents([(dx, dy)])
-        for obj in contents:
-            if isinstance(obj, SurvivorAgent) and not obj.found:
-                obj.found = True
-                world.found_survivors += 1
-                result["events"].append(f"SURVIVOR FOUND: {obj.unique_id} at ({dx},{dy})")
-                result["map_updates"].append({"x": dx, "y": dy, "survivor_found": True, "survivor_id": obj.unique_id})
-                world.log_action(drone.unique_id, f"Thermal scan MATCH: {obj.unique_id} rescued at ({dx},{dy})!")
-                if world.total_survivors > 0 and world.found_survivors == world.total_survivors:
-                    if not getattr(world, "mission_complete", False):
-                        world.mission_complete = True
-                        world.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued.")
-                break
-        else:
-            result["events"].append(f"Scan complete at ({dx},{dy}): no survivor found")
-        # Mark discovered
-        world.global_discovered_cells.add((dx, dy))
-        result["map_updates"].append({"x": dx, "y": dy, "discovered": True})
-
-    elif action == "CONTINUE_CHARGING":
-        result["events"].append(f"{drone.unique_id} continues charging at base.")
-
-    elif action == "RETURN_TO_BASE":
-        drone.status = "RETURNING"
-        result["new_status"] = "RETURNING"
-        result["events"].append(f"{drone.unique_id} set to RETURNING — will navigate base next tick.")
-
-    elif action == "IDLE":
-        result["events"].append(f"{drone.unique_id} is IDLE this tick.")
-    else:
-        result["events"].append(f"ERROR: unknown action '{action}' (expected MOVE/THERMAL_SCAN/RETURN_TO_BASE/CONTINUE_CHARGING/IDLE)")
-
-    return result
-
+        import mcp_server
+        return mcp_server.thermal_scan(drone_id)
+        
+    return f"Error: Unknown action {action}"
 
 # ==========================================
-# ⏱️ BACKGROUND HEARTBEAT THREAD
+# ⏱️ IMMORTAL BACKGROUND HEARTBEAT THREAD
 # ==========================================
 sim_world = None
 sim_running = False
 
 def _run_sim_loop():
-    """Continuously triggers the physics engine 1 time per second."""
+    """Critical Fix 3: Immortal thread with traceback and 0.5s tick."""
     global sim_world, sim_running
-    tick_s = float(os.getenv("SIM_TICK_S", "1.0"))
+    print("🟢 [ENGINE] Physics thread is ALIVE.")
+    
     while sim_running:
-        if sim_world:
-            sim_world.step()
-        time.sleep(tick_s)
+        try:
+            if sim_world:
+                sim_world.step()
+        except Exception:
+            print(f"\n🔥 [FATAL ENGINE CRASH] Simulation halted:")
+            traceback.print_exc()
+        time.sleep(0.5)
 
 def initialize_world(config=None, start_sim=True):
     global sim_world
-    
+    if config is None: config = {}
+    if config.get("num_drones", 0) < 1: config["num_drones"] = 5
     sim_world = DisasterZoneModel(config)
-    
-    # Start the heartbeat thread if requested
-    if start_sim:
-        start_sim_thread()
-        
+    if start_sim: start_sim_thread()
     return sim_world
 
 def start_sim_thread():

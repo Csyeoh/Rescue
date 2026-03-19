@@ -370,10 +370,11 @@ export default function App() {
 
         if (msg.type === 'tick_update') {
           const payload = msg.payload ?? {};
-          const drone_states = Array.isArray(payload.drone_states) ? payload.drone_states : [];
-          const map_updates = Array.isArray(payload.map_updates) ? payload.map_updates : [];
-          const agent_logs = Array.isArray(payload.agent_logs) ? payload.agent_logs : [];
-          const events = Array.isArray(payload.events) ? payload.events : [];
+          // MAPPING FIX: Match backend keys (drones, terrain, logs, survivors)
+          const drone_states = Array.isArray(payload.drones) ? payload.drones : [];
+          const map_updates = Array.isArray(payload.terrain) ? payload.terrain : [];
+          const agent_logs = Array.isArray(payload.logs) ? payload.logs : [];
+          const survivors = Array.isArray(payload.survivors) ? payload.survivors : [];
 
           setDrones((prev) => {
             const prevById = new Map<string, DroneStatus>(prev.map((d) => [d.id, d] as [string, DroneStatus]));
@@ -396,22 +397,27 @@ export default function App() {
 
           setGrid((prevGrid) => {
             if (!prevGrid?.length) return prevGrid;
-            const next = prevGrid.map(row => row.map(cell => ({ ...cell, isIlluminated: false })));
+            const next = prevGrid.map(row => row.map(cell => ({ ...cell, isIlluminated: false, revealed: true })));
 
             for (const upd of map_updates) {
               const x = Number(upd.x);
               const y = Number(upd.y);
               if (!(x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE)) continue;
               const cell = next[y][x];
-              if (upd.obstacle_discovered) {
-                cell.obstacleDiscovered = true;
-              }
-              if (upd.survivor_found) {
-                cell.isRescued = true;
-              }
-              if (upd.discovered) {
-                discoveredRef.current.add(`${x},${y}`);
-              }
+              cell.altitude = upd.altitude;
+              cell.type = upd.is_obstacle ? 'obstacle' : (upd.terrain_type === 'single_story' || upd.terrain_type === 'multiple_story' ? 'building' : 'empty');
+              cell.obstacleDiscovered = Boolean(upd.obstacle_discovered);
+              discoveredRef.current.add(`${x},${y}`);
+            }
+
+            // Sync survivors state
+            for (const s of survivors) {
+              const x = Number(s.x);
+              const y = Number(s.y);
+              if (!(x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE)) continue;
+              const cell = next[y][x];
+              cell.hasSurvivor = true;
+              cell.isRescued = Boolean(s.discovered);
             }
 
             for (const ds of drone_states) {
@@ -439,15 +445,9 @@ export default function App() {
           });
 
           for (const l of agent_logs) {
-            const agent = l?.drone_id ? String(l.drone_id) : 'AGENT';
-            const message = l?.content ? String(l.content) : JSON.stringify(l);
+            const agent = l?.drone ? String(l.drone) : 'AGENT';
+            const message = l?.message ? String(l.message) : JSON.stringify(l);
             addLog(agent, message, 'info');
-          }
-          for (const e of events) {
-            const agent = e?.drone_id ? String(e.drone_id) : 'SIM';
-            const message = e?.event ? String(e.event) : JSON.stringify(e);
-            const t = message.startsWith('ERROR') ? 'error' : message.startsWith('WARN') ? 'warning' : 'info';
-            addLog(agent, message, t as any);
           }
           return;
         }
@@ -457,10 +457,12 @@ export default function App() {
           setIsSimulationRunning(false);
           return;
         }
-      } catch {
+      } catch (e) {
+        console.error("WS message error:", e);
         addLog('SYSTEM', 'WS message parse error.', 'warning');
       }
     };
+
 
     return () => {
       ws.close();

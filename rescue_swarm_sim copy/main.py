@@ -11,7 +11,8 @@ def start_services():
         # 1. Start the FastAPI Backend (Simulation & Database API)
         print("--> Starting Python Simulation Backend (Port 8000)...")
         backend_process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "api:app", "--port", "8000", "--log-level", "info"]
+            [sys.executable, "-m", "uvicorn", "api:app", "--port", "8000", "--no-access-log", "--log-level", "warning"],
+            cwd=os.getcwd() 
         )
         processes.append(backend_process)
 
@@ -22,7 +23,7 @@ def start_services():
         print("--> Starting Next.js Live Map (Port 3000)...")
         npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
         # Look one directory UP from the current folder, then find rescue-ui
-        ui_path = os.path.join(os.path.dirname(os.getcwd()), "new_rescue_ui")
+        ui_path = os.path.join(os.path.dirname(os.getcwd()), "rescue-ui")
         
         frontend_process = subprocess.Popen(
             [npm_cmd, "run", "dev"],

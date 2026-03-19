@@ -80,9 +80,9 @@ def _run_phase3_scenario(scenario_name: str, target_c_pos: tuple[int, int]):
     )
 
     original_drone_agent = simulation.DroneAgent
-    original_cell_agent = simulation.CellAgent
+    original_terrain_agent = simulation.TerrainAgent
     simulation.DroneAgent = FakeDroneAgent
-    simulation.CellAgent = FakeCellAgent
+    simulation.TerrainAgent = FakeCellAgent
     
     try:
         controller = SimpleSwarmController()
@@ -99,7 +99,7 @@ def _run_phase3_scenario(scenario_name: str, target_c_pos: tuple[int, int]):
             
     finally:
         simulation.DroneAgent = original_drone_agent
-        simulation.CellAgent = original_cell_agent
+        simulation.TerrainAgent = original_terrain_agent
 
 def main() -> None:
     print("\n--- Phase 3 Test: Multi-Zone Assist (Double-Dip) ---")
