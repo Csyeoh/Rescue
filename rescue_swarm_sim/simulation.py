@@ -34,35 +34,12 @@ class DroneAgent(Agent):
         """
         Implementation of the fixed step() logic.
         Prioritizes the local 'priority_searching_list' over the DB 'drone_waypoints'.
+        Includes Bingo Fuel survival reflex and strictly 1-tile movement.
         """
         conn = database._connect()
         cursor = conn.cursor()
         
-        # 1. Check local search list first (Decentralized BFS)
-        target = None
-        seq = -1
-        
-        if self.priority_searching_list:
-            target = self.priority_searching_list[0] # Just peek
-            seq = 0 # Using local index
-            print(f"DEBUG: Drone {self.custom_id} using local BFS target {target}. Remaining: {len(self.priority_searching_list)}")
-        else:
-            # 2. Fallback to SQLite Waypoints (Centralized Strategy)
-            cursor.execute("""
-                SELECT seq, x, y FROM drone_waypoints 
-                WHERE drone_id=? AND is_done=0 
-                ORDER BY seq ASC LIMIT 1
-            """, (self.custom_id,))
-            wp = cursor.fetchone()
-            if wp:
-                seq, tx, ty = wp
-                target = (tx, ty)
-        
-        if not target:
-            conn.close()
-            return
-
-        # 3. Get current position from DB
+        # 0. Get current position and battery from DB first
         cursor.execute("SELECT x, y, battery FROM drones WHERE drone_id=?", (self.custom_id,))
         curr = cursor.fetchone()
         if not curr:
@@ -71,13 +48,63 @@ class DroneAgent(Agent):
         cx, cy, battery = curr
         self.battery = battery
         start = (cx, cy)
+        base_pos = (9, 9)
+
+        # 1. BINGO FUEL CHECK (Survival Reflex)
+        # Calculate distance to base using current knowledge
+        obstacles = autopilot._read_obstacle_set(conn)
+        path_to_base = autopilot._a_star_path(start, base_pos, obstacles - {start, base_pos})
+        distance_to_base = len(path_to_base) if path_to_base is not None else (abs(cx - 9) + abs(cy - 9))
         
+        target = None
+        seq = -1
+        is_bingo = False
+
+        # RECALIBRATED: Bingo Fuel at 1% cost + 5% reserve
+        if start != base_pos and (battery <= (distance_to_base * 1) + 5):
+            is_bingo = True
+            print(f"⚠️ BINGO FUEL: Drone {self.custom_id} triggered RTB reflex. Battery: {battery}%, Dist: {distance_to_base}")
+            
+            # Survival Action: Clear mission state
+            self.priority_searching_list = []
+            with database.DB_WRITE_LOCK:
+                conn_bingo = database._connect()
+                cursor_bingo = conn_bingo.cursor()
+                cursor_bingo.execute("DELETE FROM drone_waypoints WHERE drone_id=?", (self.custom_id,))
+                cursor_bingo.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", 
+                                     (self.custom_id, "WARNING: Bingo Fuel reached! RTB for recharge."))
+                conn_bingo.commit()
+                conn_bingo.close()
+            
+            target = base_pos
+        else:
+            # 2. Normal Logic: Check local search list first (Decentralized BFS)
+            if self.priority_searching_list:
+                target = self.priority_searching_list[0] 
+                seq = 0 
+                # print(f"DEBUG: Drone {self.custom_id} using local BFS target {target}. Remaining: {len(self.priority_searching_list)}")
+            else:
+                # 3. Fallback to SQLite Waypoints (Centralized Strategy)
+                cursor.execute("""
+                    SELECT seq, x, y FROM drone_waypoints 
+                    WHERE drone_id=? AND is_done=0 
+                    ORDER BY seq ASC LIMIT 1
+                """, (self.custom_id,))
+                wp = cursor.fetchone()
+                if wp:
+                    seq, tx, ty = wp
+                    target = (tx, ty)
+        
+        if not target:
+            conn.close()
+            return
+
         # If already at target, pop and move on
         if start == target:
-            print(f"DEBUG: Drone {self.custom_id} already at {target}. Pop and mark done.")
-            if self.priority_searching_list:
+            # print(f"DEBUG: Drone {self.custom_id} already at {target}. Pop and mark done.")
+            if not is_bingo and self.priority_searching_list:
                 self.priority_searching_list.pop(0)
-            else:
+            elif not is_bingo:
                 with database.DB_WRITE_LOCK:
                     conn2 = database._connect()
                     conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
@@ -87,14 +114,15 @@ class DroneAgent(Agent):
             return
 
         # 4. Pathfinding using discovered hazards
-        obstacles = autopilot._read_obstacle_set(conn)
+        # Close connection before potential move logic to avoid lock issues
         conn.close()
         
+        # WE MUST PATHFIND BUT ONLY SUBMIT THE VERY FIRST STEP
         path = autopilot._a_star_path(start, target, obstacles)
         
         if path:
-            next_step = path[0]
-            print(f"DEBUG: Drone {self.custom_id} heading to {target}. Step: {next_step}")
+            next_step = path[0] # STICTLY 1 STEP
+            # print(f"DEBUG: Drone {self.custom_id} heading to {target}. Step: {next_step}")
             
             res = resolve_intent({
                 "drone_id": self.custom_id,
@@ -105,37 +133,37 @@ class DroneAgent(Agent):
             
             if "Success" in res:
                 self.model.grid.move_agent(self, next_step)
-                if next_step == target:
+                if next_step == target and not is_bingo:
                     if self.priority_searching_list:
                         self.priority_searching_list.pop(0)
                     else:
                         with database.DB_WRITE_LOCK:
-                            conn2 = database._connect()
-                            conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
-                            conn2.commit()
-                            conn2.close()
-            elif "Failure: Blocked" in res or "Collision" in res:
+                            conn = database._connect()
+                            conn.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
+                            conn.commit()
+                            conn.close()
+            elif ("Failure: Blocked" in res or "Collision" in res) and not is_bingo:
                 # Discard unreachable target to prevent infinite loops
                 print(f"DEBUG: Drone {self.custom_id} target {target} BLOCKED. Discarding.")
                 if self.priority_searching_list:
                     self.priority_searching_list.pop(0)
                 else:
                     with database.DB_WRITE_LOCK:
-                        conn2 = database._connect()
-                        conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
-                        conn2.commit()
-                        conn2.close()
-        else:
+                        conn = database._connect()
+                        conn.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
+                        conn.commit()
+                        conn.close()
+        elif not is_bingo:
             # Unreachable path (e.g., completely boxed in by known obstacles)
             print(f"DEBUG: Drone {self.custom_id} NO PATH to {target}. Discarding.")
             if self.priority_searching_list:
                 self.priority_searching_list.pop(0)
             else:
                 with database.DB_WRITE_LOCK:
-                    conn2 = database._connect()
-                    conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
-                    conn2.commit()
-                    conn2.close()
+                    conn = database._connect()
+                    conn.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
+                    conn.commit()
+                    conn.close()
 
 class DisasterZoneModel(Model):
     def __init__(self, config=None):
@@ -279,7 +307,7 @@ class DisasterZoneModel(Model):
 def resolve_intent(intent: dict):
     """
     Bridge between agents and hardware.
-    Includes Fix 2 (No redundant logs) and Fix 3 (Passive Survivor Discovery).
+    Includes Physics Guardrail and Step-and-Scan logic.
     """
     import database
     import sqlite3
@@ -296,10 +324,21 @@ def resolve_intent(intent: dict):
             conn = database._connect()
             cursor = conn.cursor()
 
-            # 1. Check battery
-            cursor.execute("SELECT battery FROM drones WHERE drone_id=?", (drone_id,))
+            # 0. STRICT PHYSICS GUARDRAIL (Manhattan Dist > 1 check)
+            cursor.execute("SELECT x, y, battery FROM drones WHERE drone_id=?", (drone_id,))
             drone_data = cursor.fetchone()
-            if not drone_data or drone_data[0] < 2:
+            if not drone_data:
+                conn.close()
+                return f"Error: {drone_id} not found."
+            
+            x, y, battery = drone_data
+            if abs(tx - x) + abs(ty - y) > 1:
+                # Teleportation detected!
+                conn.close()
+                return f"Failure: Blocked. Manhattan distance {abs(tx - x) + abs(ty - y)} > 1."
+
+            # 1. Check battery
+            if battery < 1:
                 conn.close()
                 return f"Failure: {drone_id} battery exhausted."
 
@@ -307,22 +346,34 @@ def resolve_intent(intent: dict):
             cursor.execute("SELECT is_obstacle FROM question_plane WHERE x=? AND y=?", (tx, ty))
             grid_data = cursor.fetchone()
             if grid_data and grid_data[0] == 1:
+                # Collision! Map it.
                 cursor.execute("UPDATE answer_plane SET obstacle_discovered=1, is_scanned=1 WHERE x=? AND y=?", (tx, ty))
                 cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, f"CRITICAL: Collision at ({tx}, {ty})!"))
                 conn.commit()
                 conn.close()
                 return "Failure: Blocked."
 
-            # 3. Successful move logic (FIX 2: Removed 'Moved to sector' log)
-            new_battery = 100 if (tx == 9 and ty == 9) else drone_data[0] - 2
+            # 3. Successful move logic (Charging Pad area abs(diff) <= 1, Drain reduced to 1%)
+            is_charging = (abs(tx - 9) <= 1 and abs(ty - 9) <= 1)
+            new_battery = 100 if is_charging else battery - 1
             cursor.execute("UPDATE drones SET x=?, y=?, battery=? WHERE drone_id=?", (tx, ty, new_battery, drone_id))
             cursor.execute("UPDATE answer_plane SET is_scanned=1 WHERE x=? AND y=?", (tx, ty))
 
-            # 4. Passive Sensors (FIX 3: Auto-Discovery of survivors in adjacent scanned cells)
+            # 4. STEP-AND-SCAN: Check the 4 adjacent grids (Up, Down, Left, Right)
             adj = [(tx, ty-1), (tx, ty+1), (tx-1, ty), (tx+1, ty)]
             for ax, ay in adj:
                 if 0 <= ax < 20 and 0 <= ay < 20:
-                    cursor.execute("UPDATE answer_plane SET is_scanned=1 WHERE x=? AND y=?", (ax, ay))
+                    # Reveal obstacles in adjacent cells
+                    cursor.execute("SELECT is_obstacle FROM question_plane WHERE x=? AND y=?", (ax, ay))
+                    a_obs = cursor.fetchone()
+                    is_a_obs = bool(a_obs[0]) if a_obs else False
+                    
+                    if is_a_obs:
+                        cursor.execute("UPDATE answer_plane SET obstacle_discovered=1, is_scanned=1 WHERE x=? AND y=?", (ax, ay))
+                    else:
+                        cursor.execute("UPDATE answer_plane SET is_scanned=1 WHERE x=? AND y=?", (ax, ay))
+                    
+                    # Detect survivors in adjacent cells
                     cursor.execute("SELECT survivor_id FROM survivors WHERE x=? AND y=? AND is_discovered=0", (ax, ay))
                     surv = cursor.fetchone()
                     if surv:

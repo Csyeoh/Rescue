@@ -94,16 +94,27 @@ def run_swarm_commander():
                     time.sleep(1.0)
                     continue
 
-                idle = ai_tools.get_idle_drones()
+                # RE-DEPLOYMENT FIX: Identify drones that are both idle AND charged
+                idle_ids = ai_tools.get_idle_drones()
                 
-                # Check if we need initial partition
+                # Filter for drones with > 95% battery
+                ready_for_redeployment = []
+                for d in drones:
+                    if d['id'] in idle_ids and d.get('battery', 0) > 95:
+                        ready_for_redeployment.append(d['id'])
+
+                # Check if we need initial partition or if any charged drones are idle
                 conn = database._connect()
                 c = conn.cursor()
                 c.execute("SELECT COUNT(*) FROM drone_waypoints")
                 wp_count = c.fetchone()[0]
                 conn.close()
 
-                if wp_count == 0 or idle:
+                if wp_count == 0 or ready_for_redeployment:
+                    if ready_for_redeployment:
+                        print(f"🔄 Re-deploying {len(ready_for_redeployment)} fully charged drones: {ready_for_redeployment}")
+                        _log_system(f"RE-DEPLOY: {len(ready_for_redeployment)} drones recharged and ready.")
+                    
                     _ai_running.set()
                     t = threading.Thread(target=_run_flow_orchestrator, daemon=True)
                     t.start()

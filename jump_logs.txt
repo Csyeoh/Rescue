@@ -1,0 +1,35 @@
+DEBUG: Drone drone_1 heading to (0, 18). Step: (2, 18)
+DEBUG: Drone drone_1 target (0, 18) BLOCKED. Discarding.
+DEBUG: Drone drone_3 heading to (8, 16). Step: (7, 17)
+DEBUG: Drone drone_1 heading to (0, 12). Step: (3, 19)
+
+DEBUG: Drone drone_4 heading to (10, 10). Step: (10, 10)
+DEBUG: Drone drone_4 target (10, 10) BLOCKED. Discarding.
+DEBUG: Drone drone_4 heading to (10, 12). Step: (9, 9)
+
+DEBUG: Drone drone_2 heading to (2, 2). Step: (4, 3)
+DEBUG: Drone drone_2 target (2, 2) BLOCKED. Discarding.
+DEBUG: Drone drone_4 heading to (10, 10). Step: (10, 8)
+DEBUG: Drone drone_3 heading to (8, 16). Step: (6, 19)
+DEBUG: Drone drone_2 heading to (0, 2). Step: (5, 4)
+
+DEBUG: Drone drone_2 heading to (7, 5). Step: (6, 8)
+DEBUG: Drone drone_5 heading to (16, 6). Step: (11, 8)
+DEBUG: Drone drone_3 heading to (17, 5). Step: (17, 5)
+DEBUG: Drone drone_4 heading to (18, 16). Step: (18, 16)
+DEBUG: Drone drone_1 heading to (18, 4). Step: (7, 9)
+DEBUG: Drone drone_5 heading to (16, 6). Step: (11, 7)
+DEBUG: Drone drone_2 heading to (7, 5). Step: (6, 9)
+DEBUG: Drone drone_3 heading to (17, 3). Step: (17, 4)
+DEBUG: Drone drone_4 heading to (18, 18). Step: (18, 17)
+DEBUG: Drone drone_1 heading to (18, 4). Step: (8, 9)
+DEBUG: Drone drone_1 heading to (18, 4). Step: (8, 8)
+DEBUG: Drone drone_3 heading to (17, 3). Step: (17, 3)
+DEBUG: Drone drone_4 heading to (18, 18). Step: (18, 18)
+DEBUG: Drone drone_5 heading to (16, 6). Step: (11, 6)
+DEBUG: Drone drone_2 heading to (7, 5). Step: (7, 9)
+DEBUG: Drone drone_4 heading to (19, 19). Step: (18, 19)
+DEBUG: Drone drone_2 heading to (7, 5). Step: (8, 9)
+DEBUG: Drone drone_3 heading to (17, 1). Step: (17, 2)
+DEBUG: Drone drone_5 heading to (16, 6). Step: (11, 5)
+DEBUG: Drone drone_1 heading to (18, 4). Step: (8, 7)
