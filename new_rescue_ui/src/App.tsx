@@ -4,16 +4,16 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Settings, 
-  Activity, 
-  Terminal, 
-  Map as MapIcon, 
-  Drone, 
-  Users, 
-  Waves, 
-  Building2, 
-  Mountain, 
+import {
+  Settings,
+  Activity,
+  Terminal,
+  Map as MapIcon,
+  Drone,
+  Users,
+  Waves,
+  Building2,
+  Mountain,
   ShieldAlert,
   Play,
   Square,
@@ -376,8 +376,8 @@ export default function App() {
               battery: Number(d.battery ?? 100),
               status: String(d.status ?? '').toUpperCase() === 'RETURNING' ? 'returning'
                 : String(d.status ?? '').toUpperCase() === 'CHARGING' ? 'charging'
-                : String(d.status ?? '').toUpperCase() === 'IDLE' ? 'idle'
-                : 'patrolling',
+                  : String(d.status ?? '').toUpperCase() === 'IDLE' ? 'idle'
+                    : 'patrolling',
               stepsTaken: 0,
             })));
           }
@@ -410,8 +410,8 @@ export default function App() {
                 battery: Number(ds.battery ?? prevD?.battery ?? 100),
                 status: String(ds.status ?? '').toUpperCase() === 'RETURNING' ? 'returning'
                   : String(ds.status ?? '').toUpperCase() === 'CHARGING' ? 'charging'
-                  : String(ds.status ?? '').toUpperCase() === 'IDLE' ? 'idle'
-                  : 'patrolling',
+                    : String(ds.status ?? '').toUpperCase() === 'IDLE' ? 'idle'
+                      : 'patrolling',
                 stepsTaken: (prevD?.stepsTaken ?? 0) + 1,
               };
             });
@@ -471,7 +471,7 @@ export default function App() {
             const message = l?.message ? String(l.message) : JSON.stringify(l);
             const time = l?.time ? String(l.time) : '';
             const logKey = `${agent}|${time}|${message}`;
-            
+
             if (!seenLogsRef.current.has(logKey)) {
               seenLogsRef.current.add(logKey);
               addLog(agent, message, 'info');
@@ -584,14 +584,18 @@ export default function App() {
       {/* Top Bar */}
       <header className="flex items-center justify-between bg-white/80 backdrop-blur-sm px-6 py-2 rounded-xl shadow-sm border border-[#6aa7ad]/20 shrink-0 mx-2 mt-2">
         <div className="flex items-center gap-4">
-          <div className="bg-azure-dark p-2 rounded-xl shadow-inner">
-            <Drone className="text-white w-6 h-6" />
+          <div className="p-2 rounded-xl shadow-inner">
+            <img
+              src="/logo.png"
+              alt="Logo"
+              className="w-10 h-10 object-contain"
+            />
           </div>
           <div>
-            <h1 className="text-xl font-black tracking-tighter text-neutral-dark">AEGIS EDGE COMMAND</h1>
+            <h1 className="text-xl font-black tracking-tighter text-neutral-dark">SaveMePls</h1>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-[10px] font-bold text-azure-mid uppercase tracking-widest">Autonomous Rescue Protocol v4.2</span>
+              <span className="text-[10px] font-bold text-azure-mid uppercase tracking-widest">Drone Rescue System</span>
             </div>
           </div>
         </div>
@@ -602,7 +606,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span className="text-xl font-black text-emerald-500">{Math.min(100, Math.floor((revealedCells / (GRID_SIZE * GRID_SIZE)) * 100))}%</span>
               <div className="w-24 h-2 bg-mint-bg border border-azure-pale rounded-full overflow-hidden">
-                <motion.div 
+                <motion.div
                   className="h-full bg-emerald-500"
                   animate={{ width: `${Math.min(100, (revealedCells / (GRID_SIZE * GRID_SIZE)) * 100)}%` }}
                 />
@@ -614,7 +618,7 @@ export default function App() {
             <div className="flex items-center gap-2">
               <span className="text-xl font-black text-blue-500">{survivorsDetected}/{config.survivors}</span>
               <div className="w-24 h-2 bg-mint-bg border border-azure-pale rounded-full overflow-hidden">
-                <motion.div 
+                <motion.div
                   className="h-full bg-blue-500"
                   animate={{ width: `${(survivorsDetected / config.survivors) * 100}%` }}
                 />
@@ -625,14 +629,13 @@ export default function App() {
             <ShieldAlert size={16} className="text-alert-orange" />
             <span className="text-xs font-bold text-azure-dark uppercase">Scenario: {config.disasterType}</span>
           </div>
-          <button 
+          <button
             onClick={toggleSimulation}
             disabled={isAborting}
-            className={`flex items-center gap-2 px-8 py-3 rounded-xl font-black transition-all transform active:scale-95 shadow-lg ${
-              isSimulationRunning 
-                ? 'bg-alert-red text-white hover:bg-alert-orange' 
-                : 'bg-alert-yellow text-neutral-dark hover:brightness-105'
-            } ${isAborting ? 'opacity-70 cursor-not-allowed' : ''}`}
+            className={`flex items-center gap-2 px-8 py-3 rounded-xl font-black transition-all transform active:scale-95 shadow-lg ${isSimulationRunning
+              ? 'bg-alert-red text-white hover:bg-alert-orange'
+              : 'bg-alert-yellow text-neutral-dark hover:brightness-105'
+              } ${isAborting ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
             {isSimulationRunning ? <Square size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
             {isSimulationRunning ? (isAborting ? 'ABORTING...' : 'ABORT MISSION') : 'DEPLOY SWARM'}
@@ -641,14 +644,14 @@ export default function App() {
       </header>
 
       {view === 'config' ? (
-        <ConfigPage 
-          config={config} 
+        <ConfigPage
+          config={config}
           onSave={async (newConfig) => {
             setConfig(newConfig);
             resetMission(newConfig);
             await generateMapPreview(newConfig);
             setView('dashboard');
-          }} 
+          }}
           onCancel={() => setView('dashboard')}
         />
       ) : (
@@ -661,7 +664,7 @@ export default function App() {
                   <Settings className="text-azure-dark" size={20} />
                   <h2 className="font-bold text-neutral-dark uppercase text-sm tracking-tight">Mission Configuration</h2>
                 </div>
-                <button 
+                <button
                   onClick={() => setView('config')}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-400 hover:bg-yellow-500 text-azure-dark rounded-lg shadow-sm transition-all transform active:scale-95 border border-yellow-500/20 group"
                   title="Edit Mission Parameters"
@@ -682,10 +685,10 @@ export default function App() {
                 <div className="space-y-4">
                   <h3 className="text-[10px] font-black text-azure-dark/40 uppercase tracking-widest border-b border-azure-pale pb-1">Known Parameters</h3>
                   <div className="space-y-3">
-                    <ConfigRow label="Survivors" icon={<Users size={14}/>} value={config.survivors} />
-                    <ConfigRow label="Drone Count" icon={<Drone size={14}/>} value={config.droneCount} />
-                    <ConfigRow label="Obstacles" icon={<ShieldAlert size={14}/>} value={`${config.obstacleDensity}%`} />
-                    <ConfigRow label="Disaster" icon={<Waves size={14}/>} value={config.disasterType.toUpperCase()} />
+                    <ConfigRow label="Survivors" icon={<Users size={14} />} value={config.survivors} />
+                    <ConfigRow label="Drone Count" icon={<Drone size={14} />} value={config.droneCount} />
+                    <ConfigRow label="Obstacles" icon={<ShieldAlert size={14} />} value={`${config.obstacleDensity}%`} />
+                    <ConfigRow label="Disaster" icon={<Waves size={14} />} value={config.disasterType.toUpperCase()} />
                   </div>
                 </div>
 
@@ -695,33 +698,33 @@ export default function App() {
                   <div className="space-y-3">
                     {config.disasterType === 'typhoon' && (
                       <>
-                        <ConfigRow label="Wind Speed" icon={<Activity size={14}/>} value={`${config.windSpeed} km/h`} />
-                        <ConfigRow label="Direction" icon={<Activity size={14}/>} value={config.windDirection} />
-                        <ConfigRow label="Rainfall" icon={<Droplets size={14}/>} value={`${config.rainfall} mm/h`} />
+                        <ConfigRow label="Wind Speed" icon={<Activity size={14} />} value={`${config.windSpeed} km/h`} />
+                        <ConfigRow label="Direction" icon={<Activity size={14} />} value={config.windDirection} />
+                        <ConfigRow label="Rainfall" icon={<Droplets size={14} />} value={`${config.rainfall} mm/h`} />
                       </>
                     )}
                     {config.disasterType === 'earthquake' && (
                       <>
-                        <ConfigRow label="Aftershock" icon={<Activity size={14}/>} value={`${config.aftershockProb}%`} />
-                        <ConfigRow label="Collapse Risk" icon={<ShieldAlert size={14}/>} value={`${config.collapseRisk}%`} />
+                        <ConfigRow label="Aftershock" icon={<Activity size={14} />} value={`${config.aftershockProb}%`} />
+                        <ConfigRow label="Collapse Risk" icon={<ShieldAlert size={14} />} value={`${config.collapseRisk}%`} />
                       </>
                     )}
                     {config.disasterType === 'tsunami' && (
                       <>
-                        <ConfigRow label="Flow Velocity" icon={<Waves size={14}/>} value={`${config.waterFlow} m/s`} />
-                        <ConfigRow label="Water Level" icon={<Droplets size={14}/>} value={`${config.waterLevel} m`} />
+                        <ConfigRow label="Flow Velocity" icon={<Waves size={14} />} value={`${config.waterFlow} m/s`} />
+                        <ConfigRow label="Water Level" icon={<Droplets size={14} />} value={`${config.waterLevel} m`} />
                       </>
                     )}
                     {config.disasterType === 'fire' && (
                       <>
-                        <ConfigRow label="Spread Rate" icon={<Activity size={14}/>} value={`${config.fireSpread} m/min`} />
-                        <ConfigRow label="Smoke Density" icon={<Activity size={14}/>} value={`${config.smokeDensity}%`} />
+                        <ConfigRow label="Spread Rate" icon={<Activity size={14} />} value={`${config.fireSpread} m/min`} />
+                        <ConfigRow label="Smoke Density" icon={<Activity size={14} />} value={`${config.smokeDensity}%`} />
                       </>
                     )}
                     {config.disasterType === 'flash_flood' && (
                       <>
-                        <ConfigRow label="Rising Speed" icon={<Droplets size={14}/>} value={`${config.risingSpeed} m/h`} />
-                        <ConfigRow label="Water Level" icon={<Droplets size={14}/>} value={`${config.waterLevel} m`} />
+                        <ConfigRow label="Rising Speed" icon={<Droplets size={14} />} value={`${config.risingSpeed} m/h`} />
+                        <ConfigRow label="Water Level" icon={<Droplets size={14} />} value={`${config.waterLevel} m`} />
                       </>
                     )}
                     {config.disasterType === 'default' && (
@@ -730,7 +733,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <button 
+                <button
                   onClick={() => {
                     resetMission(config);
                     void generateMapPreview(config);
@@ -742,7 +745,7 @@ export default function App() {
                   {isGenerating ? 'GENERATING...' : 'GENERATE RANDOM MAP'}
                 </button>
 
-                <button 
+                <button
                   onClick={() => resetMission(config)}
                   className="w-full mt-2 flex items-center justify-center gap-2 bg-white hover:bg-red-50 text-red-600 border border-red-200 py-3 rounded-xl font-black text-xs transition-all active:scale-95"
                 >
@@ -750,7 +753,7 @@ export default function App() {
                   RESET SIMULATION
                 </button>
 
-                <button 
+                <button
                   onClick={downloadLogsAsText}
                   className="w-full mt-2 flex items-center justify-center gap-2 bg-azure-dark hover:bg-azure-dark/90 text-white py-3 rounded-xl font-black text-xs transition-all active:scale-95"
                 >
@@ -774,15 +777,15 @@ export default function App() {
                     <div className="text-[8px] font-black text-[#6aa7ad] bg-[#e1fef0] px-1.5 py-0.5 rounded border border-[#6aa7ad]/20">ABSOLUTE TRUTH</div>
                   </div>
                   <div className="flex-1 w-full bg-white/50 rounded-lg border border-[#6aa7ad]/10 p-0.5 flex items-center justify-center overflow-hidden min-h-0">
-                    <div 
+                    <div
                       className="aspect-square h-full w-auto max-w-full grid gap-[1px]"
                       style={{ gridTemplateColumns: 'repeat(20, 1fr)', gridTemplateRows: 'repeat(20, 1fr)' }}
                     >
                       {grid.map((row: GridCell[], y: number) => row.map((cell: GridCell, x: number) => (
-                        <GridCellComponent 
-                          key={`q-${x}-${y}`} 
-                          cell={cell} 
-                          mode="god" 
+                        <GridCellComponent
+                          key={`q-${x}-${y}`}
+                          cell={cell}
+                          mode="god"
                           isDroneHere={drones.some(d => d.x === x && d.y === y)}
                           disasterType={config.disasterType}
                         />
@@ -800,15 +803,15 @@ export default function App() {
                     <div className="text-[8px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">DYNAMIC UPDATE</div>
                   </div>
                   <div className="flex-1 w-full bg-white/50 rounded-lg border border-[#6aa7ad]/10 p-0.5 flex items-center justify-center overflow-hidden min-h-0">
-                    <div 
+                    <div
                       className="aspect-square h-full w-auto max-w-full grid gap-[1px]"
                       style={{ gridTemplateColumns: 'repeat(20, 1fr)', gridTemplateRows: 'repeat(20, 1fr)' }}
                     >
                       {grid.map((row: GridCell[], y: number) => row.map((cell: GridCell, x: number) => (
-                        <GridCellComponent 
-                          key={`a-${x}-${y}`} 
-                          cell={cell} 
-                          mode="drone" 
+                        <GridCellComponent
+                          key={`a-${x}-${y}`}
+                          cell={cell}
+                          mode="drone"
                           isDroneHere={drones.some(d => d.x === x && d.y === y)}
                           disasterType={config.disasterType}
                         />
@@ -820,38 +823,77 @@ export default function App() {
             </div>
 
             <div className="shrink-0 flex flex-col gap-4">
-            {/* Legend Section */}
-            <div className="bg-white/90 backdrop-blur-sm p-3 rounded-xl shadow-sm border border-[#6aa7ad]/20 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 max-w-full">
-              <div className="flex items-center gap-2 text-[10px] font-black text-slate-700 uppercase whitespace-nowrap">
-                <div className="w-3 h-3 bg-[#ff8a8a] rounded-sm" /> Single-Story
-              </div>
-              <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
-                <div className="w-3 h-3 bg-[#b30000] rounded-sm" /> Multi-Story
-              </div>
-              <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
-                <div className="w-3 h-3 bg-black rounded-sm" /> Obstacle
-              </div>
-              <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
-                <div className="w-3 h-3 bg-[#87bcad] rounded-sm" /> Terrain
-              </div>
-              <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
-                <div className="w-3 h-3 bg-cyan-900 rounded-sm" /> Base Station
-              </div>
-              <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
-                <div className="w-2 h-2 bg-yellow-400 rounded-full shadow-[0_0_5px_#f2cf4e]" /> Survivor
-              </div>
-              <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
-                <div className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_5px_#60a5fa]" /> Drone
-              </div>
-              <div className="flex flex-col gap-1 min-w-[80px]">
-                <span className="text-[8px] font-black text-azure-mid uppercase tracking-tighter">Elevation</span>
-                <div className="flex items-center gap-2 text-[9px] font-bold text-azure-mid italic">
-                  <span>Lo</span>
-                  <div className="w-10 h-1 bg-gradient-to-r from-[#53a560] to-[#87bcad] rounded-full" />
-                  <span>Hi</span>
+              {/* Legend Section */}
+              <div className="bg-white/90 backdrop-blur-sm p-3 rounded-xl shadow-sm border border-[#6aa7ad]/20 flex flex-wrap items-center justify-center gap-x-6 gap-y-3 max-w-full">
+                <div className="flex items-center gap-2 text-[10px] font-black text-slate-700 uppercase whitespace-nowrap">
+                  <div className="w-3 h-3 bg-[#ff8a8a] rounded-sm" /> Single-Story
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
+                  <div className="w-3 h-3 bg-[#b30000] rounded-sm" /> Multi-Story
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
+                  <div className="w-3 h-3 bg-black rounded-sm" /> Obstacle
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
+                  <div className="w-3 h-3 bg-[#87bcad] rounded-sm" /> Terrain
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
+                  <div className="w-3 h-3 bg-cyan-900 rounded-sm" /> Base Station
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full shadow-[0_0_5px_#f2cf4e]" /> Survivor
+                </div>
+                <div className="flex items-center gap-2 text-[10px] font-black text-azure-dark uppercase whitespace-nowrap">
+                  <div className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_5px_#60a5fa]" /> Drone
+                </div>
+                <div className="flex flex-col gap-1 min-w-[80px]">
+                  <span className="text-[8px] font-black text-azure-mid uppercase tracking-tighter">Elevation</span>
+                  <div className="flex items-center gap-2 text-[9px] font-bold text-azure-mid italic">
+                    <span>Lo</span>
+                    <div className="w-10 h-1 bg-gradient-to-r from-[#53a560] to-[#87bcad] rounded-full" />
+                    <span>Hi</span>
+                  </div>
                 </div>
               </div>
-            </div>
+
+              {/* Bottom: Mission Log (RESTORED) */}
+              <div className={`transition-all duration-300 flex flex-col ${isLogOpen ? 'h-32' : 'h-10'} bg-[#1A202C] rounded-xl shadow-xl border border-white/10 overflow-hidden`}>
+                <div className="flex items-center justify-between px-4 py-2 border-b border-white/5 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Terminal size={14} className="text-cyan-400" />
+                    <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">Mission Log</span>
+                  </div>
+                  <button
+                    onClick={() => setIsLogOpen(!isLogOpen)}
+                    className="p-1 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white"
+                  >
+                    {isLogOpen ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+                  </button>
+                </div>
+
+                <div className={`flex-1 overflow-y-auto custom-scrollbar font-mono text-[10px] space-y-1.5 p-4 pr-2 ${!isLogOpen && 'hidden'}`}>
+                  <AnimatePresence initial={false}>
+                    {logs.map((log) => (
+                      <motion.div
+                        key={log.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="flex gap-3 border-l border-white/10 pl-3"
+                      >
+                        <span className="text-white/20 shrink-0">{log.timestamp}</span>
+                        <span className={`font-bold shrink-0 ${log.type === 'success' ? 'text-emerald-400' :
+                            log.type === 'warning' ? 'text-yellow-400' :
+                              log.type === 'error' ? 'text-red-400' : 'text-cyan-400'
+                          }`}>
+                          [{log.agent}]
+                        </span>
+                        <p className="text-gray-300 leading-tight">{log.message}</p>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                  <div ref={logEndRef} />
+                </div>
+              </div>
 
             </div>
           </main>
@@ -865,7 +907,7 @@ export default function App() {
                   <h2 className="font-bold text-white uppercase text-sm tracking-tight whitespace-nowrap">Swarm Status</h2>
                 </div>
                 <div className="flex flex-col items-center gap-3">
-                   <button 
+                  <button
                     onClick={() => setIsSwarmPanelOpen(!isSwarmPanelOpen)}
                     className="p-1.5 hover:bg-white/5 rounded-md transition-colors text-white/30 hover:text-white"
                     title={isSwarmPanelOpen ? "Collapse Sidebar" : "Expand Sidebar"}
@@ -887,9 +929,9 @@ export default function App() {
               {isSwarmPanelOpen && (
                 <div className="flex-1 overflow-y-auto custom-scrollbar space-y-3 pr-1">
                   {drones.map(drone => (
-                    <DroneCard 
-                      key={drone.id} 
-                      drone={drone} 
+                    <DroneCard
+                      key={drone.id}
+                      drone={drone}
                       isExpanded={expandedDroneId === drone.id}
                       onToggle={() => setExpandedDroneId(expandedDroneId === drone.id ? null : drone.id)}
                       logs={logs}
@@ -907,14 +949,14 @@ export default function App() {
 
 // --- Sub-components ---
 
-function DroneCard({ 
-  drone, 
-  isExpanded, 
-  onToggle, 
-  logs 
-}: { 
-  drone: DroneStatus, 
-  isExpanded: boolean, 
+function DroneCard({
+  drone,
+  isExpanded,
+  onToggle,
+  logs
+}: {
+  drone: DroneStatus,
+  isExpanded: boolean,
   onToggle: () => void,
   logs: LogEntry[],
   key?: string
@@ -929,29 +971,27 @@ function DroneCard({
   }, [isExpanded, droneLogs.length]);
 
   return (
-    <div 
+    <div
       onClick={onToggle}
-      className={`cursor-pointer transition-all duration-300 rounded-xl border ${
-        isExpanded ? 'bg-white/10 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/5 hover:bg-white/10'
-      } p-3 overflow-hidden`}
+      className={`cursor-pointer transition-all duration-300 rounded-xl border ${isExpanded ? 'bg-white/10 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]' : 'bg-white/5 border-white/5 hover:bg-white/10'
+        } p-3 overflow-hidden`}
     >
       {/* Collapsed Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-xs font-black text-white">{drone.id}</span>
           {!isExpanded && (
-             <div className="flex gap-0.5">
-               {[1, 2, 3, 4].map(i => (
-                 <div key={i} className={`w-1 h-1 rounded-full ${drone.status === 'patrolling' && i === 1 ? 'bg-emerald-400 shadow-[0_0_3px_#34d399]' : 'bg-white/20'}`} />
-               ))}
-             </div>
+            <div className="flex gap-0.5">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className={`w-1 h-1 rounded-full ${drone.status === 'patrolling' && i === 1 ? 'bg-emerald-400 shadow-[0_0_3px_#34d399]' : 'bg-white/20'}`} />
+              ))}
+            </div>
           )}
         </div>
-        <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${
-          drone.status === 'patrolling' ? 'bg-emerald-500/20 text-emerald-400' :
+        <span className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase ${drone.status === 'patrolling' ? 'bg-emerald-500/20 text-emerald-400' :
           drone.status === 'returning' ? 'bg-alert-orange/20 text-alert-orange' :
-          'bg-white/10 text-white/50'
-        }`}>
+            'bg-white/10 text-white/50'
+          }`}>
           {drone.status}
         </span>
       </div>
@@ -960,7 +1000,7 @@ function DroneCard({
         <div className="flex items-center gap-3">
           <div className="flex-1">
             <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-              <motion.div 
+              <motion.div
                 className={`h-full ${drone.battery < 20 ? 'bg-alert-red' : drone.battery < 50 ? 'bg-alert-yellow' : 'bg-emerald-500'}`}
                 animate={{ width: `${drone.battery}%` }}
               />
@@ -989,13 +1029,12 @@ function DroneCard({
                 {/* Player LEDs */}
                 <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
                   {[1, 2, 3, 4].map(i => (
-                    <div 
-                      key={i} 
-                      className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
-                        drone.status === 'patrolling' && i === 1 
-                          ? 'bg-emerald-400 shadow-[0_0_5px_#34d399]' 
-                          : 'bg-white/10'
-                      }`} 
+                    <div
+                      key={i}
+                      className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${drone.status === 'patrolling' && i === 1
+                        ? 'bg-emerald-400 shadow-[0_0_5px_#34d399]'
+                        : 'bg-white/10'
+                        }`}
                     />
                   ))}
                 </div>
@@ -1007,13 +1046,12 @@ function DroneCard({
                   <div className="flex items-center">
                     <div className="w-8 h-4 border border-white/30 rounded-sm p-0.5 flex gap-0.5 relative">
                       {[1, 2, 3, 4].map(i => (
-                        <div 
-                          key={i} 
-                          className={`flex-1 rounded-sm ${
-                            drone.battery >= i * 25 
-                              ? (drone.battery < 25 ? 'bg-red-500' : 'bg-emerald-400') 
-                              : 'bg-white/5'
-                          }`} 
+                        <div
+                          key={i}
+                          className={`flex-1 rounded-sm ${drone.battery >= i * 25
+                            ? (drone.battery < 25 ? 'bg-red-500' : 'bg-emerald-400')
+                            : 'bg-white/5'
+                            }`}
                         />
                       ))}
                       <div className="absolute -right-1 top-1/2 -translate-y-1/2 w-1 h-2 bg-white/30 rounded-r-sm" />
@@ -1050,9 +1088,9 @@ function DroneCard({
                     <div key={idx} className="flex gap-2 mb-1">
                       <span className="text-white/20">[{log.timestamp}]</span>
                       <span className={
-                        log.type === 'success' ? 'text-emerald-400' : 
-                        log.type === 'warning' ? 'text-yellow-400' : 
-                        log.type === 'error' ? 'text-red-400' : 'text-cyan-400'
+                        log.type === 'success' ? 'text-emerald-400' :
+                          log.type === 'warning' ? 'text-yellow-400' :
+                            log.type === 'error' ? 'text-red-400' : 'text-cyan-400'
                       }>
                         {log.message}
                       </span>
@@ -1085,7 +1123,7 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
 
   return (
     <div className="flex-1 flex items-center justify-center bg-white/10 p-8 overflow-y-auto">
-      <motion.div 
+      <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl border border-azure-pale/50 overflow-hidden"
@@ -1107,11 +1145,10 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
                   <button
                     key={type}
                     onClick={() => setLocalConfig({ ...localConfig, disasterType: type })}
-                    className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${
-                      localConfig.disasterType === type 
-                        ? 'bg-azure-dark text-white border-azure-dark shadow-md' 
-                        : 'bg-mint-bg text-azure-dark border-azure-pale hover:border-azure-mid'
-                    }`}
+                    className={`px-4 py-3 rounded-xl text-[10px] font-black uppercase transition-all border ${localConfig.disasterType === type
+                      ? 'bg-azure-dark text-white border-azure-dark shadow-md'
+                      : 'bg-mint-bg text-azure-dark border-azure-pale hover:border-azure-mid'
+                      }`}
                   >
                     {type.replace('_', ' ')}
                   </button>
@@ -1121,7 +1158,7 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
 
             <div className="space-y-4">
               <label className="text-xs font-black text-azure-mid uppercase tracking-widest">Simulation Difficulty</label>
-              <select 
+              <select
                 value={localConfig.difficulty}
                 onChange={(e) => setLocalConfig({ ...localConfig, difficulty: e.target.value })}
                 className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-azure-mid"
@@ -1136,8 +1173,8 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
           <div className="grid grid-cols-3 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-black text-azure-mid uppercase tracking-widest">Survivors Amount</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={localConfig.survivors}
                 onChange={(e) => setLocalConfig({ ...localConfig, survivors: parseInt(e.target.value) })}
                 className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-3 text-sm font-bold outline-none"
@@ -1145,8 +1182,8 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black text-azure-mid uppercase tracking-widest">Drone Count</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={localConfig.droneCount}
                 onChange={(e) => setLocalConfig({ ...localConfig, droneCount: parseInt(e.target.value) })}
                 className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-3 text-sm font-bold outline-none"
@@ -1154,8 +1191,8 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-black text-azure-mid uppercase tracking-widest">Obstacles (%)</label>
-              <input 
-                type="number" 
+              <input
+                type="number"
                 value={localConfig.obstacleDensity}
                 onChange={(e) => setLocalConfig({ ...localConfig, obstacleDensity: parseInt(e.target.value) })}
                 className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-3 text-sm font-bold outline-none"
@@ -1169,27 +1206,27 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
               <Activity size={18} className="text-azure-dark" />
               <h3 className="text-sm font-black text-azure-dark uppercase tracking-widest">Environmental Unknowns</h3>
             </div>
-            
+
             <div className="grid grid-cols-3 gap-6">
               {localConfig.disasterType === 'typhoon' && (
                 <>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Wind Speed (km/h)</label>
-                    <input type="number" value={localConfig.windSpeed} onChange={(e) => setLocalConfig({...localConfig, windSpeed: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.windSpeed} onChange={(e) => setLocalConfig({ ...localConfig, windSpeed: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Wind Direction</label>
-                    <select value={localConfig.windDirection} onChange={(e) => setLocalConfig({...localConfig, windDirection: e.target.value})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none">
+                    <select value={localConfig.windDirection} onChange={(e) => setLocalConfig({ ...localConfig, windDirection: e.target.value })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none">
                       {['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'].map(d => <option key={d} value={d}>{d}</option>)}
                     </select>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Flying Debris Prob (%)</label>
-                    <input type="number" value={localConfig.debrisProb} onChange={(e) => setLocalConfig({...localConfig, debrisProb: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.debrisProb} onChange={(e) => setLocalConfig({ ...localConfig, debrisProb: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Rainfall Rate (mm/h)</label>
-                    <input type="number" value={localConfig.rainfall} onChange={(e) => setLocalConfig({...localConfig, rainfall: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.rainfall} onChange={(e) => setLocalConfig({ ...localConfig, rainfall: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                 </>
               )}
@@ -1198,11 +1235,11 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
                 <>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Aftershock Prob (%)</label>
-                    <input type="number" value={localConfig.aftershockProb} onChange={(e) => setLocalConfig({...localConfig, aftershockProb: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.aftershockProb} onChange={(e) => setLocalConfig({ ...localConfig, aftershockProb: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Structural Collapse Risk (%)</label>
-                    <input type="number" value={localConfig.collapseRisk} onChange={(e) => setLocalConfig({...localConfig, collapseRisk: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.collapseRisk} onChange={(e) => setLocalConfig({ ...localConfig, collapseRisk: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                 </>
               )}
@@ -1211,15 +1248,15 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
                 <>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Water Flow Velocity (m/s)</label>
-                    <input type="number" value={localConfig.waterFlow} onChange={(e) => setLocalConfig({...localConfig, waterFlow: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.waterFlow} onChange={(e) => setLocalConfig({ ...localConfig, waterFlow: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Secondary Wave (min)</label>
-                    <input type="number" value={localConfig.secondaryWave} onChange={(e) => setLocalConfig({...localConfig, secondaryWave: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.secondaryWave} onChange={(e) => setLocalConfig({ ...localConfig, secondaryWave: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Water Level (m)</label>
-                    <input type="number" value={localConfig.waterLevel} onChange={(e) => setLocalConfig({...localConfig, waterLevel: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.waterLevel} onChange={(e) => setLocalConfig({ ...localConfig, waterLevel: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                 </>
               )}
@@ -1228,15 +1265,15 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
                 <>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Fire Spread Rate (m/min)</label>
-                    <input type="number" value={localConfig.fireSpread} onChange={(e) => setLocalConfig({...localConfig, fireSpread: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.fireSpread} onChange={(e) => setLocalConfig({ ...localConfig, fireSpread: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Smoke Density (%)</label>
-                    <input type="number" value={localConfig.smokeDensity} onChange={(e) => setLocalConfig({...localConfig, smokeDensity: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.smokeDensity} onChange={(e) => setLocalConfig({ ...localConfig, smokeDensity: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Extreme Heat Zones (%)</label>
-                    <input type="number" value={localConfig.heatZones} onChange={(e) => setLocalConfig({...localConfig, heatZones: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.heatZones} onChange={(e) => setLocalConfig({ ...localConfig, heatZones: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                 </>
               )}
@@ -1245,11 +1282,11 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
                 <>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Initial Water Level (m)</label>
-                    <input type="number" value={localConfig.waterLevel} onChange={(e) => setLocalConfig({...localConfig, waterLevel: parseInt(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" value={localConfig.waterLevel} onChange={(e) => setLocalConfig({ ...localConfig, waterLevel: parseInt(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                   <div className="space-y-2">
                     <label className="text-[9px] font-black text-azure-mid uppercase tracking-widest">Rising Speed (m/h)</label>
-                    <input type="number" step="0.1" value={localConfig.risingSpeed} onChange={(e) => setLocalConfig({...localConfig, risingSpeed: parseFloat(e.target.value)})} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
+                    <input type="number" step="0.1" value={localConfig.risingSpeed} onChange={(e) => setLocalConfig({ ...localConfig, risingSpeed: parseFloat(e.target.value) })} className="w-full bg-mint-bg border border-azure-pale rounded-xl px-4 py-2 text-xs font-bold outline-none" />
                   </div>
                 </>
               )}
@@ -1263,13 +1300,13 @@ function ConfigPage({ config, onSave, onCancel }: { config: any, onSave: (c: any
           </div>
 
           <div className="flex items-center justify-end gap-4 pt-4 border-t border-azure-pale">
-            <button 
+            <button
               onClick={onCancel}
               className="px-6 py-3 rounded-xl font-bold text-azure-mid hover:text-azure-dark transition-colors"
             >
               CANCEL
             </button>
-            <button 
+            <button
               onClick={() => onSave(localConfig)}
               className="bg-emerald-500 text-white px-10 py-3 rounded-xl font-black shadow-lg hover:bg-emerald-600 transition-all transform active:scale-95"
             >
@@ -1286,7 +1323,7 @@ function GridCellComponent({ cell, mode, isDroneHere, disasterType }: { cell: Gr
   const isRevealed = mode === 'god' || cell.revealed;
   const effectiveType: EntityType =
     mode === 'drone' && cell.type === 'obstacle' && !cell.obstacleDiscovered ? 'empty' : cell.type;
-  
+
   const getBgColor = () => {
     if (!isRevealed) return '#5a8e94'; // Blended dark teal for unrevealed
     if (effectiveType === 'base') return '#164e63'; // Dark Cyan Base
@@ -1294,7 +1331,7 @@ function GridCellComponent({ cell, mode, isDroneHere, disasterType }: { cell: Gr
     if (effectiveType === 'building') {
       return cell.height > 1 ? '#b30000' : '#ff8a8a'; // Restore building colors
     }
-    
+
     // Terrain: Single base color with elevation-based opacity handled in style
     return '#87bcad';
   };
@@ -1308,21 +1345,28 @@ function GridCellComponent({ cell, mode, isDroneHere, disasterType }: { cell: Gr
   return (
     <div className="relative w-full h-full aspect-square overflow-hidden">
       {/* Terrain Layer */}
-      <div 
+      <div
         className="absolute inset-0 transition-all duration-500"
-        style={{ 
+        style={{
           backgroundColor: getBgColor(),
           opacity: getOpacity()
         }}
       />
-      
-      {/* Survivor Indicator (Glowing Yellow Dot) */}
-      {isRevealed && ((mode === 'god' && cell.hasSurvivor && !cell.isRescued) || (mode === 'drone' && cell.isRescued)) && (
+
+      {/* Survivor Indicator (Glowing Yellow for Undiscovered, Green for Discovered) */}
+      {isRevealed && ((mode === 'god' && cell.hasSurvivor) || (mode === 'drone' && cell.isRescued)) && (
         <div className="absolute inset-0 flex items-center justify-center z-20">
           <motion.div 
-            animate={{ opacity: [0.6, 1, 0.6], scale: [0.8, 1.1, 0.8] }}
+            animate={{ 
+              opacity: [0.6, 1, 0.6], 
+              scale: cell.isRescued ? [1, 1.2, 1] : [0.8, 1.1, 0.8] 
+            }}
             transition={{ repeat: Infinity, duration: 1.5 }}
-            className="w-2 h-2 bg-yellow-400 rounded-full shadow-[0_0_8px_#f2cf4e]"
+            className={`w-2 h-2 rounded-full shadow-lg ${
+              cell.isRescued 
+                ? 'bg-[#10B981] shadow-[#10B981]/50' // Bright Green for Rescued
+                : 'bg-[#FACC15] shadow-[#FACC15]/50' // Yellow for Undiscovered
+            }`}
           />
         </div>
       )}
@@ -1330,7 +1374,7 @@ function GridCellComponent({ cell, mode, isDroneHere, disasterType }: { cell: Gr
       {/* Drone Indicator (Bright Blue Dot) */}
       {isDroneHere && (
         <div className="absolute inset-0 flex items-center justify-center z-30">
-          <motion.div 
+          <motion.div
             animate={{ scale: [1, 1.3, 1] }}
             transition={{ repeat: Infinity, duration: 0.6 }}
             className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_8px_#60a5fa]"
@@ -1342,7 +1386,7 @@ function GridCellComponent({ cell, mode, isDroneHere, disasterType }: { cell: Gr
       {mode === 'drone' && !cell.revealed && (
         <div className={`absolute inset-0 z-10 bg-[#4a7a7e]/80 ${cell.isIlluminated ? 'opacity-0' : 'opacity-100'}`} />
       )}
-      
+
       {/* Base Station Highlight */}
       {cell.type === 'base' && (
         <div className="absolute inset-0 border border-white/30 animate-pulse z-40 pointer-events-none" />
