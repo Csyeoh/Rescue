@@ -44,12 +44,22 @@ We will introduce more "Chaos Variables" to test agent resilience:
 
 ## 🏃‍♂️ How to Run the Project
 
-### 1. Configure API Keys
-Create a `.env` file in the `rescue_swarm_sim` directory and add your Gemini API Key:
+### 1. Configure the LLM Provider
+You have two options to run the system: using the Gemini API or a Local LLM. We highly encourage using a Local LLM to demonstrate the system's capabilities to operate completely offline in a blackout scenario.
+
+Create a `.env` file in the `rescue_swarm_sim` directory.
+
+**Option A: Local LLM (Recommended for Blackout Scenarios)**
+```env
+USE_LOCAL_LLM=true
+LOCAL_MODEL="YOUR_LOCAL_LLM_MODEL"
+OLLAMA_API_BASE="YOUR_OLLAMA_API_BASE" 
+```
+
+**Option B: Gemini API**
 ```env
 GEMINI_API_KEY="your_api_key_here"
 ```
-
 ### 2. Install Backend Dependencies
 ```bash
 cd rescue_swarm_sim
