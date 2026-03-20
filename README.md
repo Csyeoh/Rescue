@@ -1,23 +1,46 @@
-# 🚁 Rescue Swarm Simulator
+# SaveMePls: Decentralized Swarm Intelligent Drone Rescue 
 
-An autonomous, multi-agent drone simulation orchestrating disaster response using **CrewAI**, a deterministic **Greedy Weighted BFS** algorithm, and a **Next.js** live dashboard.
+**SaveMePls** is an autonomous, AI-orchestrated drone rescue system designed to maximize survival rates in post-disaster scenarios. By combining **Swarm Intelligence** with **Large Language Models (LLMs)**, we enable a fleet of drones to navigate complex environments, manage limited resources, and locate survivors with zero human intervention.
 
-## 🚀 The Architecture
-This codebase has been upgraded to replace fragile LLM-based bounding-box grid coordinates with mathematically precise search paths, managed flawlessly by an AI-driven state machine.
+## 🏗️ System Architecture
+![Solution Architecture](./solution_architecture.png)
 
-*   **CrewAI Flow (`SwarmCommanderFlow`)**: Orchestrates the mission lifecycle. It retrieves real-time arrays of drones and terrain, branches logic based on drone statuses, and triggers workload re-assignments.
-*   **Agentic Reasoning (Chain-of-Thought)**: The Swarm Commander (powered by Gemini via `google-genai` and CrewAI) analyzes the BFS coordinates and drone battery levels to narrate logical, human-readable tactical decisions into the mission DB logs.
-*   **Greedy Weighted BFS**: A deterministic Python algorithm that prioritizes unmapped single-story buildings (high priority) and accounts for battery constraints to prevent search overlaps.
-*   **Live Next.js UI**: A dynamic dashboard visualizing the drone pathing and active database logs in real-time.
+Our architecture bridges the gap between high-level reasoning and low-level execution:
 
----
+*   **Orchestration (CrewAI)**: We utilize CrewAI to manage specialized AI agents. These agents utilize **Chain-of-Thought (CoT)** reasoning to coordinate the rescue mission, powered by either local LLMs or **Gemini 2.5 Pro**.
+*   **Simulation Environment (Mesa)**: Built on the Mesa framework, our environment provides a high-fidelity, agent-based simulation of disaster zones. It enforces real-world physics, obstacle constraints, and agent-environment interactions.
+*   **Intelligence Layer (FastMCP)**: Using the **Model Context Protocol (MCP)**, we provide the agents with a standardized "toolbelt." These tools allow the LLM to query the simulation state, move drones, and identify survivors autonomously.
+*   **World Generation (Gemini)**: We leverage Gemini to procedurally generate diverse disaster maps. By configuring obstacle density, building types, and survivor counts, we ensure our system is tested against a wide variety of "unseen" edge cases.
+*   **Visualization (Next.js)**: A real-time web dashboard built with Next.js allows users to monitor the swarm's movement, battery levels, and search progress as the simulation unfolds. We used websocket to convey the from the Mesa in realtime to our dashboard
 
-## 🛠 Prerequisites
-*   **Python 3.10+**
-*   **Node.js 18+**
-*   **Google Gemini API Key**
+## 🚀 Methodology
+*   **Priority-Based Partitioning**: Before deployment, we use a **Mathematical Greedy BFS** algorithm to divide the map. Every drone is assigned a search queue based on a **Cell Priority Score**, which factors in altitude and building type (e.g., prioritizing single-story homes over multi-story buildings during floods).
+*   **Autonomous Execution**: Once the simulation begins, agents interact with the Mesa environment via MCP tools. The agents process environmental feedback and execute flight paths without pre-scripted instructions.
+*   **Dynamic Resource Allocation**: To ensure "zero wasted movement," the system dynamically reassigns search cells from busy drones to idle ones. Agents calculate the **movement cost** (considering battery life and obstacles) before committing to a new target.
+*   **Transparent Reasoning**: Every action taken by the swarm is logged. Users can download and audit the **Agent’s Thought Process** and tool calls to understand **exactly why** a specific rescue decision was made.
 
----
+## 🗺️ Future Improvements
+Our vision for **SaveMePls** is to evolve from a 2D simulation into a comprehensive, multi-environment disaster response framework.
+
+### 1. Multi-Disaster Adaptability
+Currently optimized for flood scenarios, we aim to expand our agent’s reasoning to handle diverse disaster types, including:
+*   **Wildfire**, **earthquake**, **landslide**, **snowslide**, etc.
+
+### 2. High-Fidelity 3D Simulation
+To bridge the gap between simulation and reality, we plan to migrate from a 2D grid to a **3D Voxel-based environment**.
+*   **Verticality**: Allowing agents to optimize flight altitude for better a FOV (Field of View).
+*   **Volumetric Obstacles**: Simulating complex urban canyons and overhanging debris.
+
+### 3. Diverse Drone Specialization (Heterogeneous Swarms)
+Moving beyond "Search-only" drones, we will introduce specialized roles:
+*   **Relay Drones**: Acting as mobile mesh network nodes to ensure connectivity in "blackout" zones.
+*   **Supply Drones**: Capable of delivering lightweight medical kits or life jackets to located survivors.
+
+### 4. Advanced Dynamic Constraints
+We will introduce more "Chaos Variables" to test agent resilience:
+*   **Dynamic Weather**: Real-time rain and wind affecting battery drain and flight stability.
+*   **Moving Obstacles**: Simulating flowing debris in water or collapsing structures.
+
 
 ## 🏃‍♂️ How to Run the Project
 
