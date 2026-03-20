@@ -7,7 +7,7 @@
 
 Our architecture bridges the gap between high-level reasoning and low-level execution:
 
-*   **Orchestration (CrewAI)**: We utilize CrewAI to manage specialized AI agents. These agents utilize **Chain-of-Thought (CoT)** reasoning to coordinate the rescue mission, powered by either local LLMs or **Gemini 2.5 Pro**.
+*   **Orchestration (CrewAI)**: We utilize CrewAI to manage specialized AI agents. These agents utilize **Chain-of-Thought (CoT)** reasoning to coordinate the rescue mission, powered by either local LLMs or **Gemini 2.5 Pro** (You are encourage to use the local LLMs to simulate the blackout scenario. Use our preset Gemini 2.5 Pro model only if you don't have a local LLM for simulation purpose).
 *   **Simulation Environment (Mesa)**: Built on the Mesa framework, our environment provides a high-fidelity, agent-based simulation of disaster zones. It enforces real-world physics, obstacle constraints, and agent-environment interactions.
 *   **Intelligence Layer (FastMCP)**: Using the **Model Context Protocol (MCP)**, we provide the agents with a standardized "toolbelt." These tools allow the LLM to query the simulation state, move drones, and identify survivors autonomously.
 *   **World Generation (Gemini)**: We leverage Gemini to procedurally generate diverse disaster maps. By configuring obstacle density, building types, and survivor counts, we ensure our system is tested against a wide variety of "unseen" edge cases.
