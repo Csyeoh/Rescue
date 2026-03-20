@@ -5,6 +5,7 @@ import os
 
 import database
 import ai_tools
+import simulation
 from autopilot import autopilot_tick
 
 def _log_system(message: str):
@@ -63,6 +64,10 @@ def run_swarm_commander():
                 if row and row[0] > 0 and row[0] == (row[1] if row[1] is not None else 0):
                     print("🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.")
                     
+                    # Hard-sync the simulation engine killswitch
+                    if simulation.sim_world:
+                        simulation.sim_world.mission_complete = True
+
                     with database.DB_WRITE_LOCK:
                         conn = database._connect()
                         cursor = conn.cursor()

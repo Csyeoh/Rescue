@@ -1,131 +1,47 @@
-1:08:47 AM
-[drone_1]
-COMMAND: Received 40 new waypoints.
-
-1:08:47 AM
-[SYSTEM]
-Central Agent: Analyzing State and partitioning zones...
-
-1:08:47 AM
-[SYSTEM]
-RE-DEPLOY: 5 drones recharged and ready.
-
-1:08:48 AM
-[SYSTEM]
-🏁 All drones have returned to (9,9). Preparing final mission report.
-
-1:08:48 AM
-[SYSTEM]
-🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.
-
-1:08:48 AM
-[SYSTEM]
-🎉 MISSION ACCOMPLISHED! All survivors rescued. Initiating global RTB.
-
-1:08:48 AM
-[drone_5]
-Survivor spotted at (17, 4)!
-
-1:08:48 AM
-[SYSTEM]
-STRATEGY: The Greedy Weighted BFS partition makes strategic sense because it optimizes drone battery levels by assigning waypoints based on terrain density. This approach ensures that each drone covers the most critical areas while minimizing energy expenditure. By doing so, we maximize our chances of completing the mission within the given time frame and with available resources.
-
-1:08:48 AM
-[drone_4]
-Survivor spotted at (16, 3)!
-
-1:08:48 AM
-[drone_3]
-Survivor spotted at (2, 15)!
-
-1:08:48 AM
-[drone_3]
-Survivor spotted at (3, 16)!
-
-1:08:48 AM
-[drone_4]
-Survivor spotted at (13, 7)!
-
-1:08:48 AM
-[drone_2]
-Survivor spotted at (6, 6)!
-
-1:08:48 AM
-[drone_2]
-Survivor spotted at (7, 7)!
-
-1:08:48 AM
-[drone_4]
-Survivor spotted at (8, 7)!
-
-1:08:48 AM
-[drone_5]
-Survivor spotted at (11, 11)!
-
-1:08:48 AM
-[drone_4]
-COMMAND: Received 40 new waypoints.
-
-1:08:48 AM
-[drone_3]
-COMMAND: Received 40 new waypoints.
-
-1:08:48 AM
-[drone_2]
-COMMAND: Received 40 new waypoints.
-
-1:08:48 AM
-[drone_5]
-Survivor spotted at (10, 10)!
-
-1:08:48 AM
-[drone_5]
-COMMAND: Received 40 new waypoints.
-
-1:08:48 AM
-[drone_1]
-COMMAND: Received 40 new waypoints.
-
-1:08:48 AM
-[SYSTEM]
-Central Agent: Analyzing State and partitioning zones...
-
-1:08:48 AM
-[SYSTEM]
-RE-DEPLOY: 5 drones recharged and ready.
-
---Mission Log from UI--
-
-[FLOW] Execution complete.
-╭───────────────────────────────────────────────── ✅ Flow Completion ─────────────────────────────────────────────────╮
-│                                                                                                                      │
-│  Flow Execution Completed                                                                                            │
-│  Name: SwarmCommanderFlow                                                                                            │
-│  ID: 3fcb27ab-a271-43cf-a270-021ede1c16f7                                                                            │
-│                                                                                                                      │
-│                                                                                                                      │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
-DEBUG: Drone drone_4 NO PATH to (10, 8). Discarding.
-DEBUG: Drone drone_2 NO PATH to (9, 7). Discarding.
-DEBUG: Drone drone_1 NO PATH to (7, 9). Discarding.
-DEBUG: Drone drone_3 NO PATH to (6, 12). Discarding.
-DEBUG: Drone drone_1 NO PATH to (3, 7). Discarding.
-DEBUG: Drone drone_5 NO PATH to (16, 10). Discarding.
-DEBUG: Drone drone_5 NO PATH to (18, 10). Discarding.
-DEBUG: Drone drone_2 NO PATH to (8, 0). Discarding.
-DEBUG: Drone drone_2 NO PATH to (0, 0). Discarding.
-DEBUG: Drone drone_2 NO PATH to (2, 0). Discarding.
-DEBUG: Drone drone_1 NO PATH to (0, 12). Discarding.
-DEBUG: Drone drone_5 NO PATH to (17, 13). Discarding.
-DEBUG: Drone drone_3 NO PATH to (5, 19). Discarding.
-DEBUG: Drone drone_2 NO PATH to (5, 5). Discarding.
-DEBUG: Drone drone_3 NO PATH to (8, 16). Discarding.
-DEBUG: Drone drone_3 NO PATH to (6, 16). Discarding.
-DEBUG: Drone drone_1 NO PATH to (0, 4). Discarding.
-DEBUG: Drone drone_5 NO PATH to (16, 6). Discarding.
-🎉 MISSION ACCOMPLISHED: Initiating global RTB Protocol.
-♻️ All drones DOCKED. Auto-resetting simulation.
-♻️ Simulation Reset detected. Clearing mission state.
-
--- log from terminal --
+[11:37:06 AM] [SYSTEM] Ready. Configure mission and generate a map preview.
+[11:37:19 AM] [SYSTEM] Map preview generated. Awaiting deployment.
+[11:37:27 AM] [COMMAND] Deploying swarm from Central Base.
+[11:37:29 AM] [SYSTEM] Central Agent: Analyzing State and partitioning zones...
+[11:37:29 AM] [SYSTEM] RE-DEPLOY: 5 drones recharged and ready.
+[11:37:29 AM] [drone_4] Survivor spotted at (8, 8)!
+[11:37:29 AM] [drone_4] COMMAND: Received 40 new waypoints.
+[11:37:29 AM] [drone_3] COMMAND: Received 40 new waypoints.
+[11:37:29 AM] [drone_2] COMMAND: Received 40 new waypoints.
+[11:37:29 AM] [drone_5] COMMAND: Received 40 new waypoints.
+[11:37:29 AM] [drone_1] COMMAND: Received 40 new waypoints.
+[11:37:30 AM] [drone_5] Survivor spotted at (12, 10)!
+[11:37:35 AM] [drone_3] Survivor spotted at (4, 14)!
+[11:37:37 AM] [SYSTEM] STRATEGY: Drone 1 has 100% battery and is assigned a 104m route, which is within its coverage limits. Drone 2 also has 100% battery but is assigned a 102m route, slightly above its limit. However, drone 5 has the shortest route of 94m, indicating it can cover more ground with its remaining battery. Therefore, these assignments make strategic sense as they balance drone battery levels and coverage limits.
+[11:37:40 AM] [drone_3] Survivor spotted at (5, 15)!
+[11:37:44 AM] [drone_4] Survivor spotted at (15, 5)!
+[11:37:50 AM] [drone_4] Survivor spotted at (16, 6)!
+[11:38:06 AM] [drone_1] Survivor spotted at (2, 17)!
+[11:38:15 AM] [drone_2] Survivor spotted at (1, 1)!
+[11:38:25 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:25 AM] [drone_3] Survivor spotted at (17, 2)!
+[11:38:25 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:26 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:27 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:28 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:29 AM] [drone_5] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:29 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:30 AM] [drone_5] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:30 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:31 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:31 AM] [drone_5] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:32 AM] [drone_5] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:32 AM] [drone_1] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:32 AM] [drone_2] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:33 AM] [drone_2] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:35 AM] [drone_2] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:35 AM] [drone_2] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:36 AM] [drone_2] WARNING: Bingo Fuel reached! RTB for recharge.
+[11:38:41 AM] [drone_3] Survivor spotted at (18, 18)!
+[11:38:42 AM] [SYSTEM] 🎉 MISSION ACCOMPLISHED! All survivors rescued. Initiating global RTB.
+[11:38:42 AM] [SYSTEM] Main Loop ERROR: name 'simulation' is not defined
+[11:38:43 AM] [SYSTEM] Main Loop ERROR: name 'simulation' is not defined
+[11:38:44 AM] [SYSTEM] Main Loop ERROR: name 'simulation' is not defined
+[11:38:45 AM] [SYSTEM] Main Loop ERROR: name 'simulation' is not defined
+[11:38:46 AM] [SYSTEM] Main Loop ERROR: name 'simulation' is not defined
+[11:38:47 AM] [SYSTEM] Main Loop ERROR: name 'simulation' is not defined
+[11:38:48 AM] [SYSTEM] Main Loop ERROR: name 'simulation' is not defined

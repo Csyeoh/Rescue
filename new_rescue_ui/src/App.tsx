@@ -161,6 +161,7 @@ export default function App() {
   const [expandedDroneId, setExpandedDroneId] = useState<string | null>(null);
   const [mapData, setMapData] = useState<any | null>(null);
   const discoveredRef = useRef<Set<string>>(new Set());
+  const seenLogsRef = useRef<Set<string>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
 
   // Grid State
@@ -197,6 +198,7 @@ export default function App() {
     setSurvivorsFound(0);
     setSurvivorsDetected(0);
     discoveredRef.current = new Set();
+    seenLogsRef.current = new Set();
     setRevealedCells(0);
     setIsSimulationRunning(false);
     setMapData(null);
@@ -467,7 +469,13 @@ export default function App() {
           for (const l of agent_logs) {
             const agent = l?.drone ? String(l.drone) : 'AGENT';
             const message = l?.message ? String(l.message) : JSON.stringify(l);
-            addLog(agent, message, 'info');
+            const time = l?.time ? String(l.time) : '';
+            const logKey = `${agent}|${time}|${message}`;
+            
+            if (!seenLogsRef.current.has(logKey)) {
+              seenLogsRef.current.add(logKey);
+              addLog(agent, message, 'info');
+            }
           }
           return;
         }

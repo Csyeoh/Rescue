@@ -29,6 +29,7 @@ class DroneAgent(Agent):
         self.battery = initial_battery
         self.priority_searching_list = [] # Local state for decentralized logic
         self.status = "IDLE"
+        self.step_count = 0
 
     def step(self):
         """
@@ -77,9 +78,15 @@ class DroneAgent(Agent):
         start = (cx, cy)
         base_pos = (9, 9)
 
+        target = None
+        seq = -1
+        is_bingo = False
+
         # NEW: Global RTB Override
         if getattr(self.model, "mission_complete", False):
-            self.priority_searching_list = [] # Clear local BFS targets to allow RTB waypoint to take over
+            self.priority_searching_list = [] # Clear local BFS targets
+            target = base_pos # FORCE target to base
+            seq = 0
 
         # 1. BINGO FUEL CHECK (Survival Reflex)
         # Calculate distance to base using current knowledge
@@ -87,12 +94,8 @@ class DroneAgent(Agent):
         path_to_base = autopilot._a_star_path(start, base_pos, obstacles - {start, base_pos})
         distance_to_base = len(path_to_base) if path_to_base is not None else (abs(cx - 9) + abs(cy - 9))
         
-        target = None
-        seq = -1
-        is_bingo = False
-
         # RECALIBRATED: Bingo Fuel at 1% cost + 5% reserve
-        if start != base_pos and (battery <= (distance_to_base * 1) + 5):
+        if not getattr(self.model, "mission_complete", False) and start != base_pos and (battery <= (distance_to_base * 1) + 5):
             is_bingo = True
             print(f"⚠️ BINGO FUEL: Drone {self.custom_id} triggered RTB reflex. Battery: {battery}%, Dist: {distance_to_base}")
             
@@ -108,7 +111,7 @@ class DroneAgent(Agent):
                 conn_bingo.close()
             
             target = base_pos
-        else:
+        elif not is_bingo and target is None:
             # 2. Normal Logic: Check local search list first (Decentralized BFS)
             if self.priority_searching_list:
                 target = self.priority_searching_list[0] 
@@ -133,9 +136,9 @@ class DroneAgent(Agent):
         # If already at target, pop and move on
         if start == target:
             # print(f"DEBUG: Drone {self.custom_id} already at {target}. Pop and mark done.")
-            if not is_bingo and self.priority_searching_list:
+            if not is_bingo and not getattr(self.model, "mission_complete", False) and self.priority_searching_list:
                 self.priority_searching_list.pop(0)
-            elif not is_bingo:
+            elif not is_bingo and not getattr(self.model, "mission_complete", False):
                 with database.DB_WRITE_LOCK:
                     conn2 = database._connect()
                     conn2.execute("UPDATE drone_waypoints SET is_done=1 WHERE drone_id=? AND seq=?", (self.custom_id, seq))
@@ -164,6 +167,10 @@ class DroneAgent(Agent):
             
             if "Success" in res:
                 self.model.grid.move_agent(self, next_step)
+                self.step_count += 1
+                if not getattr(self.model, "mission_complete", False) and self.step_count % 20 == 0:
+                    print(f"[{self.custom_id}] 📡 Sector {next_step} scanned. LIDAR nominal.")
+                
                 if next_step == target and not is_bingo:
                     if self.priority_searching_list:
                         self.priority_searching_list.pop(0)
@@ -415,6 +422,10 @@ def resolve_intent(intent: dict):
                 conn.close()
                 return f"Failure: {drone_id} battery exhausted."
 
+            # Helper to check if mission is active
+            cursor.execute("SELECT COUNT(*) FROM survivors WHERE is_discovered=0")
+            mission_active = cursor.fetchone()[0] > 0
+
             # 2. Check for physical obstacles
             cursor.execute("SELECT is_obstacle FROM question_plane WHERE x=? AND y=?", (tx, ty))
             grid_data = cursor.fetchone()
@@ -422,6 +433,8 @@ def resolve_intent(intent: dict):
                 # Collision! Map it.
                 cursor.execute("UPDATE answer_plane SET obstacle_discovered=1, is_scanned=1 WHERE x=? AND y=?", (tx, ty))
                 cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, f"CRITICAL: Collision at ({tx}, {ty})!"))
+                if mission_active:
+                    print(f"[{drone_id}] 🚧 Structural anomaly mapped at ({tx}, {ty}).")
                 conn.commit()
                 conn.close()
                 return "Failure: Blocked."
@@ -442,7 +455,11 @@ def resolve_intent(intent: dict):
                     is_a_obs = bool(a_obs[0]) if a_obs else False
                     
                     if is_a_obs:
+                        cursor.execute("SELECT obstacle_discovered FROM answer_plane WHERE x=? AND y=?", (ax, ay))
+                        already_known = cursor.fetchone()[0]
                         cursor.execute("UPDATE answer_plane SET obstacle_discovered=1, is_scanned=1 WHERE x=? AND y=?", (ax, ay))
+                        if mission_active and not already_known:
+                            print(f"[{drone_id}] 🚧 Structural anomaly mapped at ({ax}, {ay}).")
                     else:
                         cursor.execute("UPDATE answer_plane SET is_scanned=1 WHERE x=? AND y=?", (ax, ay))
                     
@@ -452,6 +469,8 @@ def resolve_intent(intent: dict):
                     if surv:
                         cursor.execute("UPDATE survivors SET is_discovered=1 WHERE survivor_id=?", (surv[0],))
                         cursor.execute("INSERT INTO logs (drone_id, message) VALUES (?, ?)", (drone_id, f"Survivor spotted at ({ax}, {ay})!"))
+                        if mission_active:
+                            print(f"[{drone_id}] 🚨 CRITICAL: High-density heat signature detected at ({ax}, {ay})! Survivor located.")
 
             conn.commit()
             conn.close()

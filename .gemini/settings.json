@@ -3,5 +3,8 @@
     "fileFiltering": {
       "enableRecursiveFileSearch": true
     }
+  },
+  "model": {
+    "name": ""
   }
 }
