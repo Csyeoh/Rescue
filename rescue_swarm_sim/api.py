@@ -392,6 +392,128 @@ def reset_simulation():
     
     return {"status": "success", "message": "Simulation database reset."}
 
+@mcp_router.get("/mission/status")
+def check_mission_status():
+    """Returns survivor counts and whether the mission is complete."""
+    conn = database._connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*), SUM(is_discovered) FROM survivors")
+    row = cursor.fetchone()
+    conn.close()
+    
+    total = row[0] if row else 0
+    found = row[1] if row and row[1] is not None else 0
+    is_complete = (total > 0 and total == found)
+    
+    return {
+        "total_survivors": total,
+        "found_survivors": found,
+        "is_complete": is_complete
+    }
+
+@mcp_router.get("/mission/map")
+def get_known_map():
+    """Returns the known layout of the 20x20 grid from the Answer Plane."""
+    conn = database._connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y, altitude, terrain_type FROM answer_plane")
+    grid_data = cursor.fetchall()
+    conn.close()
+    
+    if not grid_data:
+        return {"error": "Map data not initialized yet."}
+    
+    return [{"x": row[0], "y": row[1], "alt": round(row[2], 1), "type": row[3]} for row in grid_data]
+
+@mcp_router.post("/mission/killswitch")
+def trigger_killswitch():
+    """Immediately stops the simulation engine ticks."""
+    if simulation.sim_world:
+        simulation.sim_world.mission_complete = True
+        return {"status": "success", "message": "Simulation killswitch triggered."}
+    return {"status": "error", "message": "Simulation engine not active."}
+
+@mcp_router.delete("/waypoints")
+def clear_all_waypoints():
+    """Wipes the drone_waypoints table."""
+    with database.DB_WRITE_LOCK:
+        conn = database._connect()
+        conn.execute("DELETE FROM drone_waypoints")
+        conn.commit()
+        conn.close()
+    return {"status": "success", "message": "All waypoints cleared."}
+
+class WaypointAssignment(BaseModel):
+    drone_id: str
+    waypoints: List[Dict[str, int]] # List of {"x": int, "y": int}
+
+@mcp_router.post("/waypoints/assign")
+def assign_waypoints(payload: WaypointAssignment):
+    """Inserts a batch of waypoints for a specific drone."""
+    with database.DB_WRITE_LOCK:
+        conn = database._connect()
+        cursor = conn.cursor()
+        for i, wp in enumerate(payload.waypoints):
+            cursor.execute(
+                "INSERT INTO drone_waypoints (drone_id, seq, x, y, is_done) VALUES (?, ?, ?, ?, 0)",
+                (payload.drone_id, i, wp['x'], wp['y'])
+            )
+        conn.commit()
+        conn.close()
+    return {"status": "success", "drone_id": payload.drone_id, "count": len(payload.waypoints)}
+
+@mcp_router.get("/waypoints/status")
+def get_assignment_status():
+    """Returns the total number of unassigned/pending waypoints in the system."""
+    conn = database._connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM drone_waypoints WHERE is_done=0")
+    count = cursor.fetchone()[0]
+    conn.close()
+    return {"pending_waypoints": count}
+
+@mcp_router.get("/drone/{drone_id}/hardware")
+def get_drone_hardware(drone_id: str):
+    """Returns full diagnostic hardware status for a specific drone."""
+    conn = database._connect()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y, battery, is_active, health_status FROM drones WHERE drone_id=?", (drone_id,))
+    result = cursor.fetchone()
+    conn.close()
+    
+    if not result:
+        return {"error": "Drone not found"}
+        
+    x, y, bat, is_active, health = result
+    state = "CHARGING AT BASE" if (x == 9 and y == 9) else "IN FLIGHT"
+    activity = "ACTIVE (SEARCHING)" if is_active == 1 else "IDLE"
+    
+    return {
+        "drone_id": drone_id,
+        "location": {"x": x, "y": y},
+        "flight_state": state,
+        "mission_status": activity,
+        "battery": bat,
+        "health": health
+    }
+
+class LogPayload(BaseModel):
+    agent_id: str
+    message: str
+
+@mcp_router.post("/logs")
+def post_system_log(payload: LogPayload):
+    """Injects a manual log entry into the database."""
+    with database.DB_WRITE_LOCK:
+        conn = database._connect()
+        conn.execute(
+            "INSERT INTO logs (drone_id, message) VALUES (?, ?)",
+            (payload.agent_id, payload.message)
+        )
+        conn.commit()
+        conn.close()
+    return {"status": "success"}
+
 app.include_router(mcp_router, prefix="/api")
 app.include_router(mcp_router, prefix="/api/mcp")
 
