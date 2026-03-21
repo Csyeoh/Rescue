@@ -1,6 +1,6 @@
 # 🚁 Rescue Swarm Simulator
 
-An autonomous, multi-agent drone simulation orchestrating disaster response using **CrewAI**, a deterministic **Greedy Weighted BFS** algorithm, and a **Next.js** live dashboard.
+An autonomous, multi-agent drone simulation orchestrating disaster response using **CrewAI**, a deterministic **Greedy Weighted BFS** algorithm, and a **Vite-powered** live dashboard.
 
 ## 🚀 The Architecture
 This codebase has been upgraded to replace fragile LLM-based bounding-box grid coordinates with mathematically precise search paths, managed flawlessly by an AI-driven state machine.
@@ -8,7 +8,7 @@ This codebase has been upgraded to replace fragile LLM-based bounding-box grid c
 *   **CrewAI Flow (`SwarmCommanderFlow`)**: Orchestrates the mission lifecycle. It retrieves real-time arrays of drones and terrain, branches logic based on drone statuses, and triggers workload re-assignments.
 *   **Agentic Reasoning (Chain-of-Thought)**: The Swarm Commander (powered by Gemini via `google-genai` and CrewAI) analyzes the BFS coordinates and drone battery levels to narrate logical, human-readable tactical decisions into the mission DB logs.
 *   **Greedy Weighted BFS**: A deterministic Python algorithm that prioritizes unmapped single-story buildings (high priority) and accounts for battery constraints to prevent search overlaps.
-*   **Live Next.js UI**: A dynamic dashboard visualizing the drone pathing and active database logs in real-time.
+*   **Live Vite UI**: A dynamic dashboard visualizing the drone pathing and active logs in real-time.
 
 ---
 
@@ -50,7 +50,7 @@ npm install
 ```
 
 ### 4. Launch the System
-Run the master orchestrator script from the `rescue_swarm_sim` directory (ensure your Python virtual environment is active). This will simultaneously boot the FastAPI backend, initialize the SQLite database, and start the Next.js frontend.
+Run the master orchestrator script from the `rescue_swarm_sim` directory (ensure your Python virtual environment is active). This will simultaneously boot the FastAPI backend and start the Vite-powered frontend.
 
 ```bash
 cd rescue_swarm_sim
