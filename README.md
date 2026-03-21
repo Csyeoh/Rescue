@@ -2,7 +2,7 @@
 
 **SaveMePls** is an autonomous, AI-orchestrated drone rescue system designed to maximize survival rates in post-disaster scenarios. By combining **Swarm Intelligence** with **Large Language Models (LLMs)**, we enable a fleet of drones to navigate complex environments, manage limited resources, and locate survivors with zero human intervention.
 
-## 🏗️ System Architecture
+## 🏗️ System Architecturegit 
 ![Solution Architecture](./solution_architecture.png)
 
 Our architecture bridges the gap between high-level reasoning and low-level execution:
