@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 @theme {
+  --font-sans: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+  
   --color-mint-bg: #f5fffa;
   --color-azure-dark: #416e6f;
   --color-azure-mid: #6aa7ad;
@@ -17,12 +19,34 @@
 
   --grid-template-columns-20: repeat(20, minmax(0, 1fr));
   --grid-template-rows-20: repeat(20, minmax(0, 1fr));
+
+  --radius-xl: 1rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
 }
 
 @layer base {
   body {
-    @apply bg-mint-bg text-neutral-dark font-sans overflow-hidden;
+    @apply bg-mint-bg text-neutral-dark font-sans overflow-hidden antialiased text-[18px];
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-tight font-bold;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-azure-dark/20 rounded-full hover:bg-azure-dark/40 transition-colors;
 }
 
 /* Heatmap intensity classes */
@@ -49,19 +73,11 @@
   box-shadow: inset 0 0 15px rgba(242, 207, 78, 0.2);
 }
 
-/* Custom scrollbar */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 5px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.05);
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #416e6f;
-  border-radius: 10px;
-}
-
 .vertical-text {
   writing-mode: vertical-rl;
   text-orientation: mixed;
+}
+
+.resize-handle {
+  @apply h-1.5 w-full cursor-row-resize bg-transparent hover:bg-azure-mid/40 transition-colors;
 }

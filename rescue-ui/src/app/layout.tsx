@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
+import { Roboto } from "next/font/google";
 import "./globals.css";
+import { ToastProvider } from "../components/UI/Toast";
+
+const roboto = Roboto({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "700", "900"],
+  variable: "--font-roboto",
+});
 
 export const metadata: Metadata = {
   title: "SaveMePls - Aegis Drone Command",
@@ -13,8 +21,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">
-        {children}
+      <body className={`${roboto.variable} font-sans antialiased`}>
+        <ToastProvider>
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );

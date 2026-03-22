@@ -3,12 +3,15 @@ import { MissionConfig, DroneStatus, LogEntry, GridCell, EntityType } from '../t
 import { GRID_SIZE, BASE_X, BASE_Y } from '../constants';
 import { resetMissionApi, generateMapApi, startMissionApi, abortMissionApi } from '../lib/api';
 import { buildGridFromMapData } from '../utils/map-utils';
+import { useToast } from '../components/UI/Toast';
 
 export const useMissionControl = () => {
+  const { showToast } = useToast();
   const [config, setConfig] = useState<MissionConfig>({
+    scenario: 'mixed urban',
     survivors: 10,
     droneCount: 5,
-    obstacleDensity: 15,
+    obstacleDensity: 'med',
     buildingHeight: 7,
     terrainHeight: 5,
     disasterType: 'default',
@@ -100,12 +103,13 @@ export const useMissionControl = () => {
       stepsTaken: 0
     }));
     setDrones(initialDrones);
-    setLogs([]);
+    setLogs(() => []);
     addLog('SYSTEM', `Ready. Configure mission and generate a map preview.`, 'info');
   }, [config, addLog]);
 
-  const generateMapPreview = useCallback(async (cfg = config) => {
+  const generateMapPreview = useCallback(async (cfg = config, customMessage?: string) => {
     setIsGenerating(true);
+    addLog('SYSTEM', customMessage || 'Generating disaster zone map...', 'info');
     try {
       const data = await generateMapApi(cfg);
       setMapData(data);
@@ -115,20 +119,43 @@ export const useMissionControl = () => {
       setSurvivorsFound(0);
       setSurvivorsDetected(0);
       setIsMapGenerated(true);
-      addLog('SYSTEM', 'Map preview generated. Awaiting deployment.', 'success');
+      addLog('SYSTEM', 'Generate map done. Ready to deploy.', 'success');
+      showToast('Disaster zone map generated successfully.', 'success');
       return data;
     } catch (e: any) {
-      addLog('SYSTEM', `Generate map failed: ${e?.message ?? String(e)}`, 'error');
+      const errorMsg = e?.message ?? String(e);
+      addLog('SYSTEM', `Generate map failed: ${errorMsg}`, 'error');
+      showToast(`Map generation failed: ${errorMsg}`, 'error');
       return null;
     } finally {
       setIsGenerating(false);
     }
-  }, [config, addLog]);
+  }, [config, addLog, showToast]);
+
+  const generateRandomMap = useCallback(async () => {
+    const scenarios = ['downtown', 'suburban', 'industrial', 'coastal', 'mixed urban', 'mountain outpost'];
+    const randomScenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+    const randomSurvivors = Math.floor(Math.random() * 10) + 5; // 5-15
+    const densities: ('low' | 'med' | 'high')[] = ['low', 'med', 'high'];
+    const randomObstacleDensity = densities[Math.floor(Math.random() * 3)];
+    
+    const newConfig: MissionConfig = {
+      ...config,
+      scenario: randomScenario,
+      survivors: randomSurvivors,
+      obstacleDensity: randomObstacleDensity,
+      disasterType: 'default',
+    };
+    
+    setConfig(newConfig);
+    await resetMission(newConfig);
+    return await generateMapPreview(newConfig, `Generating Random Disaster Zone Map...`);
+  }, [config, resetMission, generateMapPreview]);
 
   const toggleSimulation = useCallback(async () => {
     if (!isSimulationRunning) {
       if (!isMapGenerated || !mapData) {
-        alert('Warning: Please generate a map first before deploying the swarm!');
+        showToast('Please generate a map first before deploying the swarm!', 'warning');
         return;
       }
       try {
@@ -136,8 +163,11 @@ export const useMissionControl = () => {
         addLog('COMMAND', 'Deploying swarm from Central Base.', 'info');
         setIsSimulationRunning(true);
         setIsAborting(false);
+        showToast('Swarm deployed successfully.', 'success');
       } catch (e: any) {
-        addLog('SYSTEM', `Start mission failed: ${e?.message ?? String(e)}`, 'error');
+        const errorMsg = e?.message ?? String(e);
+        addLog('SYSTEM', `Start mission failed: ${errorMsg}`, 'error');
+        showToast(`Deployment failed: ${errorMsg}`, 'error');
       }
     } else {
       setIsAborting(true);
@@ -191,6 +221,7 @@ export const useMissionControl = () => {
     addLog,
     resetMission,
     generateMapPreview,
+    generateRandomMap,
     toggleSimulation,
     downloadLogsAsText,
     discoveredRef,

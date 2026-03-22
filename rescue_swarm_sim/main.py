@@ -36,18 +36,6 @@ def start_services():
         )
         processes.append(frontend_process)
 
-        # ==========================================
-        # 3. AI SWARM COMMANDER (Ready for next step!)
-        # ==========================================
-        # Once we build agent.py, uncomment these three lines to boot the AI automatically!
-        
-        print("--> Awakening AI Swarm Commander...")
-        ai_process = subprocess.Popen([sys.executable, "agent.py"], cwd=os.getcwd(), env=env)
-        processes.append(ai_process)
-
-        print("\n✅ All systems nominal. Dashboard available at http://localhost:3000")
-        print("Press Ctrl+C to shut down all servers.")
-
         # Keep the master script alive while the subprocesses run
         while True:
             time.sleep(1)

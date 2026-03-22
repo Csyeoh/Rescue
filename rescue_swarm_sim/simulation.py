@@ -25,7 +25,7 @@ class SurvivorAgent(Agent):
         self.found = False
 
 class DroneAgent(Agent):
-    """A dynamic agent that moves and consumes battery."""
+    """A dynamic agent that moves and search for survivors in a disaster zone, it moves and consumes battery."""
     def __init__(self, unique_id, model, battery):
         super().__init__(unique_id, model)
         self.battery = battery
@@ -36,7 +36,7 @@ class DroneAgent(Agent):
     def move(self, new_position):
         # This will be called by your Flow/MCP Tool logic
         self.model.grid.move_agent(self, new_position)
-        self.battery -= 1 # 1% per move rule
+        self.battery -= 2 # 2% per move rule
 
 
 class DisasterZoneModel(Model):

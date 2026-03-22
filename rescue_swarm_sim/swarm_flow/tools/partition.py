@@ -238,3 +238,29 @@ def partition_grid_greedy_bfs(num_drones: int, base_pos_x: int, base_pos_y: int)
                 agent.priority_searching_list = sorted_list
     
     return partitions
+
+
+def compute_rebalance(idle_drone_id: str, burdened_drone_id: str, current_assignments: dict, drone_batteries: dict) -> list[tuple[int, int]]:
+    """
+    Algorithm to offload searching tasks from a burdened drone to an idle one.
+    Takes the furthest 1/3 of the burdened drone's queue and validates against idle drone's battery.
+    """
+    burdened_queue = current_assignments.get(burdened_drone_id, [])
+    if len(burdened_queue) < 4:
+        return [] # Not enough work to justify a hand-off
+        
+    # Transfer roughly 30% of the remaining queue
+    num_to_transfer = len(burdened_queue) // 3
+    
+    # Check idle drone's range (Battery - 15% safety reserve)
+    # Each cell cost is roughly 2% battery + 1% for scanning
+    idle_batt = drone_batteries.get(idle_drone_id, 100)
+    max_cells_by_batt = max(0, (idle_batt - 15) // 3)
+    
+    transfer_count = min(num_to_transfer, max_cells_by_batt)
+    if transfer_count <= 0:
+        return []
+        
+    # Take from the end of the queue (the furthest points)
+    transferred = burdened_queue[-transfer_count:]
+    return transferred

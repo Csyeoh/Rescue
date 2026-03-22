@@ -2,19 +2,10 @@ import { BASE_X, BASE_Y, GRID_SIZE } from "../constants";
 import { GridCell, MissionConfig, EntityType } from "../types";
 
 export const toBackendConfig = (cfg: MissionConfig) => {
-  const scenarioMap: Record<string, string> = {
-    typhoon: 'coastal',
-    tsunami: 'coastal',
-    earthquake: 'downtown',
-    fire: 'industrial',
-    flash_flood: 'suburban',
-    default: 'mixed',
-  };
-  const scenario = scenarioMap[cfg.disasterType] ?? 'mixed';
-  const num_drones = Math.max(1, Math.min(10, Number(cfg.droneCount) || 3));
-  const num_survivors = Math.max(0, Math.min(100, Number(cfg.survivors) || 0));
-  const d = Number(cfg.obstacleDensity) || 0;
-  const obstacle_difficulty = d <= 7 ? 'low' : d <= 15 ? 'med' : 'high';
+  const scenario = cfg.scenario || 'mixed urban';
+  const num_drones = Math.max(3, Math.min(5, Number(cfg.droneCount) || 3));
+  const num_survivors = Math.max(1, Math.min(20, Number(cfg.survivors) || 1));
+  const obstacle_difficulty = cfg.obstacleDensity; // It is already 'low' | 'med' | 'high'
   return {
     scenario,
     num_drones,
@@ -54,6 +45,10 @@ export const buildGridFromMapData = (map_data: any): GridCell[][] => {
     if (x === BASE_X && y === BASE_Y) continue;
     const terrainType = String(c.terrain_type ?? '');
     const isObstacle = Boolean(c.is_obstacle);
+    
+    cell.altitude = Number(c.altitude ?? 0);
+    cell.buildingHeight = Number(c.building_height ?? 0);
+
     if (isObstacle) {
       cell.type = 'obstacle';
       cell.obstacleDiscovered = Boolean(c.obstacle_discovered);
@@ -62,11 +57,11 @@ export const buildGridFromMapData = (map_data: any): GridCell[][] => {
     } else {
       cell.type = 'empty';
     }
+    
     if (cell.type === 'building') {
       cell.height = terrainType === 'multiple_story' ? 2 : 1;
     } else {
-      const alt = Number(c.altitude ?? 0);
-      const scaled = Math.max(1, Math.min(9, Math.round((alt / 100) * 8) + 1));
+      const scaled = Math.max(1, Math.min(9, Math.round((cell.altitude / 100) * 8) + 1));
       cell.height = scaled;
     }
   }

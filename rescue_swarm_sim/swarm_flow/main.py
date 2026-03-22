@@ -13,6 +13,7 @@ from .crews.rescue_crew.rescue_crew import RescueCrew, DroneIntent
 class SwarmMissionState(BaseModel):
     simulation_active: bool = True
     active_drones: List[str] = []
+    partitioned_assignments: Dict[str, List[tuple[int, int]]] = {}
 
 class SwarmCombinedFlow(Flow[SwarmMissionState]):
     def __init__(self):
@@ -36,18 +37,59 @@ class SwarmCombinedFlow(Flow[SwarmMissionState]):
             except:
                 pass 
                 
-            # Run deterministic partition (State dynamically injected to `sim_world` by partition function)
+            # Run deterministic partition
             partitions = partition_grid_greedy_bfs(num_drones, base_x, base_y)
+            self.state.partitioned_assignments = partitions
             self.state.active_drones = sorted(list(partitions.keys()), key=lambda x: int(x.split("_")[1]))
             
             print(f"Partitioning Complete for {num_drones} drones.")
-            return "swarm_loop" # Trigger the first swarm step
+            return "swarm_loop"
         else:
             print("No drones found in simulation to partition.")
             self.state.simulation_active = False
             return "end_mission"
 
     @listen("swarm_loop")
+    def rebalance_swarm(self):
+        """Phase 0: Check if any drone is idle and offload work if possible."""
+        import simulation
+        from .tools.partition import compute_rebalance
+        
+        if not simulation.sim_world: return
+        
+        # Identify idle drones (finished their list)
+        idle_drones = []
+        drone_states = {}
+        for agent in simulation.sim_world.schedule.agents:
+            from simulation import DroneAgent
+            if isinstance(agent, DroneAgent):
+                drone_states[agent.unique_id] = agent
+                # Check if priority list is empty or drone is idle
+                if not agent.priority_searching_list and agent.status != "CHARGING":
+                    idle_drones.append(agent.unique_id)
+
+        if not idle_drones:
+            return # No rebalance needed
+
+        # Find drone with most work
+        for idle_id in idle_drones:
+            burdened_drone = max(drone_states.values(), key=lambda a: len(a.priority_searching_list))
+            if len(burdened_drone.priority_searching_list) > 5:
+                # Compute offload
+                current_map = {d_id: list(a.priority_searching_list) for d_id, a in drone_states.items()}
+                batteries = {d_id: a.battery for d_id, a in drone_states.items()}
+                
+                transferred = compute_rebalance(idle_id, burdened_drone.unique_id, current_map, batteries)
+                
+                if transferred:
+                    # Update physical Mesa state
+                    # Remove from burdened
+                    burdened_drone.priority_searching_list = [p for p in burdened_drone.priority_searching_list if p not in transferred]
+                    # Assign to idle
+                    drone_states[idle_id].priority_searching_list = transferred
+                    simulation.sim_world.log_action("SYSTEM", f"REBALANCE: {idle_id} taking {len(transferred)} cells from {burdened_drone.unique_id}")
+
+    @listen(or_("swarm_loop", rebalance_swarm))
     def get_states_and_build_tasks(self):
         """Phase 1: Deterministic Routing based on Python physical truth."""
         print(f"\n--- [RescueSwarmFlow] Initiating Swarm Step (Tick {int(time.time() % 1000)}) ---")

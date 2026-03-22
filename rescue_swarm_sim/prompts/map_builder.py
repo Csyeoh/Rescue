@@ -1,23 +1,28 @@
 MAP_BUILDER_PROMPT = """
-You are an expert Map Urban Planner generating a logical, random disaster map.
-Design a blueprint for a 20x20 grid (x: 0-19, y: 0-19) representing the disaster zone.
+You are an expert Map Urban Planner generating a logical, structured disaster map for a drone simulation.
+Design a blueprint for a 20x20 grid (x: 0-19, y: 0-19).
 
 SCENARIO: {scenario}
 
-REAL-WORLD LOGIC RULES:
-1. Base Camp: Grid (9,9) MUST be completely empty. Do not place anything here.
-2. Topography: Define 1 to 4 'topography' anchor points that represent the semantic topography of the scenario.
-   - For example, if it's a coastal scenario, you might have a high-altitude anchor inland (e.g., 80.0) and a low-altitude anchor near the coast (e.g., 5.0).
-   - Set 'base_altitude' (between 1.0 and 100.0) and 'spread' (e.g. 10.0-30.0) thoughtfully to shape the land organically.
-3. Buildings: Place a logical number of 'single_story' (suburbs) and 'multiple_story' (downtowns) buildings to form an urban layout.
-   - Based on the given scenario, either group them locally into dense residential areas or spread them out.
-   - Every building MUST have a logical `height` assigned natively in the structured output.
-   - Single-story buildings must be between 3.0 and 5.0 meters.
-   - Multi-story buildings must be between 6.0 and 10.0 meters.
-4. Survivors: You MUST place exactly {num_survivors} survivors. 
-   - Survivors should mostly stay indoors (inside buildings), and rare cases (10%) outdoors.
-   - If a survivor is placed on the EXACT same x,y coordinate as a building, they are considered trapped INSIDE the building.
-   - Never put two survivors on the exact same coordinate.
+CORE PLACEMENT LOGIC:
+1. Central Base (9,9): MUST be completely empty terrain. Maintain a 2-cell clear buffer around it (no buildings in coordinates where x or y is 8, 9, or 10).
+2. Sparse Distribution: Do not pack the map. Aim for 15-25% total building coverage. Buildings should feel like they belong to a planned area, not randomly scattered dots.
+3. Road Network: To simulate a logical city/village, you MUST maintain 'empty corridors' (roads). 
+   - Leave at least one row or column empty every 3 to 4 units to act as streets.
+   - Buildings should line up along these imaginary streets.
+4. Cluster Logic: Groups of buildings should not exceed 3x3 areas. Ensure there is at least 1-2 cells of terrain between different clusters or individual buildings.
 
-Ensure x and y are strictly between 0 and 19.
+SCENARIO GUIDELINES:
+- Downtown: Focused on clusters of 'multiple_story' buildings (6-10m). Use 'Avenues' (2-cell wide empty columns/rows).
+- Suburban: Mostly 'single_story' (3-5m) spaced out significantly. Each house should have terrain (yards) around it.
+- Industrial: 2 or 3 large isolated clusters of buildings near the edges, leaving the center mostly clear terrain.
+- Mountain Outpost: Buildings should follow the 'topography' anchors. Place buildings on similar altitudes to simulate tiered slopes.
+- Coastal: Buildings should be clustered away from the lowest altitude points (the water/shore).
+
+DATA REQUIREMENTS:
+- Topography: Define 2 to 4 'topography' anchor points. Use 'base_altitude' (1.0 to 100.0) and 'spread' (10.0-30.0) to create slopes or flat zones.
+- Buildings: Assigned 'single_story' or 'multiple_story' with a specific `height` (meters).
+- Survivors: Place exactly {num_survivors} survivors. 90% should be inside buildings (same x,y as a building).
+
+Ensure all coordinates are strictly integers 0-19.
 """

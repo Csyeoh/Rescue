@@ -1,6 +1,4 @@
 from fastmcp import FastMCP
-import time
-import json
 import sys
 import os
 
@@ -246,6 +244,85 @@ def get_mission_data() -> dict:
         "remaining_survivors": world.total_survivors - world.found_survivors,
         "global_discovered_count": len(world.global_discovered_cells)
     }
+
+@mcp.tool()
+def log_strategy(drone_id: str, reasoning: str) -> str:
+    """Logs a strategic Chain-of-Thought reasoning message to the simulation log."""
+    if not simulation.sim_world: return "Error: no sim"
+    simulation.sim_world.log_action(drone_id, f"STRATEGY: {reasoning}")
+    return "Success: reasoning logged."
+
+@mcp.tool()
+def get_map_intel() -> str:
+    """Returns a string representing the known map (altitudes and discovered obstacles)."""
+    if not simulation.sim_world: return "Error: no sim"
+    world = simulation.sim_world
+    from simulation import CellAgent
+    
+    intel = []
+    for contents, (x, y) in world.grid.coord_iter():
+        for obj in contents:
+            if isinstance(obj, CellAgent):
+                obs_status = "OBSTACLE" if obj.is_obstacle and obj.obstacle_discovered else "CLEAR"
+                intel.append(f"({x},{y}): Alt {obj.altitude:.1f}m, {obj.terrain_type}, {obs_status}")
+    return "\n".join(intel)
+
+@mcp.tool()
+def get_path_step(drone_id: str, target_x: int, target_y: int) -> dict:
+    """
+    Calculates the next (x, y) coordinate to move towards a target using A* pathfinding.
+    Avoids all known obstacles. Returns {'x': next_x, 'y': next_y}.
+    """
+    if not simulation.sim_world: return {"error": "no sim"}
+    world = simulation.sim_world
+    
+    from simulation import DroneAgent, CellAgent
+    drone = next((a for a in world.schedule.agents if isinstance(a, DroneAgent) and a.unique_id == drone_id), None)
+    if not drone or not drone.pos: return {"error": "drone not found"}
+    
+    start = drone.pos
+    goal = (target_x, target_y)
+    
+    # Simple Manhattan A*
+    import heapq
+    def heuristic(a, b): return abs(a[0] - b[0]) + abs(a[1] - b[1])
+    
+    obstacles = set()
+    for contents, (x, y) in world.grid.coord_iter():
+        for obj in contents:
+            if isinstance(obj, CellAgent) and obj.is_obstacle and obj.obstacle_discovered:
+                obstacles.add((x, y))
+                
+    frontier = []
+    heapq.heappush(frontier, (0, start))
+    came_from = {start: None}
+    cost_so_far = {start: 0}
+    
+    while frontier:
+        current = heapq.heappop(frontier)[1]
+        if current == goal: break
+        
+        for dx, dy in [(0,1), (0,-1), (1,0), (-1,0)]:
+            next_node = (current[0] + dx, current[1] + dy)
+            if 0 <= next_node[0] < 20 and 0 <= next_node[1] < 20 and next_node not in obstacles:
+                new_cost = cost_so_far[current] + 1
+                if next_node not in cost_so_far or new_cost < cost_so_far[next_node]:
+                    cost_so_far[next_node] = new_cost
+                    priority = new_cost + heuristic(goal, next_node)
+                    heapq.heappush(frontier, (priority, next_node))
+                    came_from[next_node] = current
+                    
+    # Reconstruct path
+    path = []
+    curr = goal
+    if goal not in came_from: return {"x": start[0], "y": start[1]} # No path
+    
+    while curr != start:
+        path.append(curr)
+        curr = came_from[curr]
+    
+    next_step = path[-1] # The first step from start
+    return {"x": next_step[0], "y": next_step[1]}
 
 if __name__ == "__main__":
     mcp.run_stdio()

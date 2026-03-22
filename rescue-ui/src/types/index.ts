@@ -12,6 +12,7 @@ export interface GridCell {
   hasSurvivor?: boolean;
   obstacleDiscovered?: boolean;
   altitude?: number;
+  buildingHeight?: number;
 }
 
 export interface DroneStatus {
@@ -32,9 +33,10 @@ export interface LogEntry {
 }
 
 export interface MissionConfig {
+  scenario: string;
   survivors: number;
   droneCount: number;
-  obstacleDensity: number;
+  obstacleDensity: 'low' | 'med' | 'high';
   buildingHeight: number;
   terrainHeight: number;
   disasterType: DisasterType;
