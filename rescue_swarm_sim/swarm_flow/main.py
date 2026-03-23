@@ -1,185 +1,147 @@
 #!/usr/bin/env python
-from typing import Dict, List, Any
+from typing import List
 from crewai.flow.flow import Flow, listen, start, router
 from pydantic import BaseModel
 import sys
 import os
 import time
+import re
 
-# Add parent dir to path so we can import simulation
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from .crews.rescue_crew.rescue_crew import RescueCrew, DroneIntent
+import simulation
+import websocket_manager
+from .crews.rescue_crew.rescue_crew import RescueCrew
+from crewai.hooks import after_llm_call, before_tool_call, after_tool_call
+# --- Agent Thinking & Tool Hooks ---
+
+# def _get_drone_id(context):
+#     """Helper to extract drone_id from the current task context."""
+#     desc = getattr(context.task, 'description', '')
+#     import re
+#     match = re.search(r'drone_\d+', desc)
+#     return match.group(0) if match else "Swarm"
+
+# @after_llm_call
+# def log_thinking(context):
+#     """Broadcasts agent reasoning to the UI."""
+#     drone_id = _get_drone_id(context)
+#     message = f"🧠 Thought: {context.response}"
+#     websocket_manager.send_to_ui("agent_log", {
+#         "agent": drone_id,
+#         "message": message,
+#         "type": "info"
+#     })
+
+# @before_tool_call
+# def log_tool_input(context):
+#     """Broadcasts tool initiation to the UI."""
+#     drone_id = _get_drone_id(context)
+#     message = f"🔧 Calling tool: {context.tool_name} (Input: {context.tool_input})"
+#     websocket_manager.send_to_ui("agent_log", {
+#         "agent": drone_id,
+#         "message": message,
+#         "type": "warning"
+#     })
+
+# @after_tool_call
+# def log_tool_output(context):
+#     """Broadcasts tool results to the UI."""
+#     drone_id = _get_drone_id(context)
+#     message = f"✅ {context.tool_name} result: {context.tool_result}"
+#     websocket_manager.send_to_ui("agent_log", {
+#         "agent": drone_id,
+#         "message": message,
+#         "type": "success"
+#     })
+
 
 class SwarmMissionState(BaseModel):
     simulation_active: bool = True
     active_drones: List[str] = []
-    partitioned_assignments: Dict[str, List[tuple[int, int]]] = {}
 
 class SwarmCombinedFlow(Flow[SwarmMissionState]):
     def __init__(self):
-        super().__init__()
+        super().__init__(tracing=True)
         self.rescue_crew = RescueCrew()
 
     @start()
+    def startFlow(self):
+        pass
+    
+    @router(startFlow)
     def partition_map(self):
-        import simulation
-        import websocket_manager
         from .tools.partition import get_active_drone_count, partition_grid_greedy_bfs
-        
-        # Get drone count directly
         num_drones = get_active_drone_count()
-        base_x, base_y = 9, 9
-        
         if num_drones > 0:
-            # Notify frontend: Partitioning is starting
-            try:
-                websocket_manager.send_to_ui("partitioning_start", {"message": f"Calculating search sectors for {num_drones} drones — please wait..."})
-            except:
-                pass 
-                
-            # Run deterministic partition
-            partitions = partition_grid_greedy_bfs(num_drones, base_x, base_y)
-            self.state.partitioned_assignments = partitions
-            self.state.active_drones = sorted(list(partitions.keys()), key=lambda x: int(x.split("_")[1]))
-            
-            print(f"Partitioning Complete for {num_drones} drones.")
+            websocket_manager.send_to_ui("partitioning_start", {"message": "Initializing drone sectors..."})
+            partitions = partition_grid_greedy_bfs(num_drones, 9, 9)
+            self.state.active_drones = sorted(list(partitions.keys()))
+            # Ensure the database knows about the new search lists before we start
+            if simulation.sim_world: simulation.sim_world.sync_to_db()
             return "swarm_loop"
-        else:
-            print("No drones found in simulation to partition.")
-            self.state.simulation_active = False
-            return "end_mission"
+        return "end_mission"
 
     @listen("swarm_loop")
-    def rebalance_swarm(self):
-        """Phase 0: Check if any drone is idle and offload work if possible."""
-        import simulation
-        from .tools.partition import compute_rebalance
-        
-        if not simulation.sim_world: return
-        
-        # Identify idle drones (finished their list)
-        idle_drones = []
-        drone_states = {}
-        for agent in simulation.sim_world.schedule.agents:
-            from simulation import DroneAgent
-            if isinstance(agent, DroneAgent):
-                drone_states[agent.unique_id] = agent
-                # Check if priority list is empty or drone is idle
-                if not agent.priority_searching_list and agent.status != "CHARGING":
-                    idle_drones.append(agent.unique_id)
+    def gather_intents(self):
+        print(f"\n--- Swarm Tick {simulation.sim_world.tick_count if simulation.sim_world else 0} ---")
+        if not simulation.sim_world: return "end_mission"
 
-        if not idle_drones:
-            return # No rebalance needed
-
-        # Find drone with most work
-        for idle_id in idle_drones:
-            burdened_drone = max(drone_states.values(), key=lambda a: len(a.priority_searching_list))
-            if len(burdened_drone.priority_searching_list) > 5:
-                # Compute offload
-                current_map = {d_id: list(a.priority_searching_list) for d_id, a in drone_states.items()}
-                batteries = {d_id: a.battery for d_id, a in drone_states.items()}
-                
-                transferred = compute_rebalance(idle_id, burdened_drone.unique_id, current_map, batteries)
-                
-                if transferred:
-                    # Update physical Mesa state
-                    # Remove from burdened
-                    burdened_drone.priority_searching_list = [p for p in burdened_drone.priority_searching_list if p not in transferred]
-                    # Assign to idle
-                    drone_states[idle_id].priority_searching_list = transferred
-                    simulation.sim_world.log_action("SYSTEM", f"REBALANCE: {idle_id} taking {len(transferred)} cells from {burdened_drone.unique_id}")
-
-    @listen(or_("swarm_loop", rebalance_swarm))
-    def get_states_and_build_tasks(self):
-        """Phase 1: Deterministic Routing based on Python physical truth."""
-        print(f"\n--- [RescueSwarmFlow] Initiating Swarm Step (Tick {int(time.time() % 1000)}) ---")
-        tasks = []
-        
-        import simulation
         from simulation import DroneAgent
-        
-        # We query the environment ONCE before the agents think
-        global_states = {}
-        if simulation.sim_world:
-            for agent in simulation.sim_world.schedule.agents:
-                if isinstance(agent, DroneAgent):
-                    global_states[agent.unique_id] = agent.status
-        
-        for d_id in self.state.active_drones:
-            state = global_states.get(d_id, "IDLE")
-            
-            # Deterministic Routing
-            if state == "SEARCHING":
-                tasks.append(self.rescue_crew.build_task("searching_task", d_id))
-            elif state == "CHARGING":
-                tasks.append(self.rescue_crew.build_task("charging_task", d_id))
-            elif state == "RETURNING":
-                tasks.append(self.rescue_crew.build_task("returning_task", d_id))
-            elif state == "IDLE":
-                tasks.append(self.rescue_crew.build_task("idle_task", d_id))
-                
-        return tasks
+        drones = [a for a in simulation.sim_world.schedule.agents if isinstance(a, DroneAgent) and not getattr(a, 'is_destroyed', False)]
+        if not drones: return "end_mission"
 
-    @listen(get_states_and_build_tasks)
-    def execute_concurrent_crew(self, tasks):
-        """Phase 2: All agents evaluate their specific task simultaneously."""
-        if not tasks: return []
-
-        tick_crew = self.rescue_crew.crew(tasks)
+        tasks = []
+        for i, drone in enumerate(drones):
+            d_id = drone.unique_id
+            state = drone.status
+            task_map = {
+                "SEARCHING": "searching_task",
+                "RETURNING": "returning_task",
+                "CHARGING": "charging_task",
+                "IDLE": "idle_task"
+            }
+            # The "Anchor" Logic: Last task is synchronous (is_async=False)
+            is_last = (i == len(drones) - 1)
+            tasks.append(self.rescue_crew.build_task(task_map.get(state, "idle_task"), d_id, is_async=not is_last))
         
-        # async_execution=True on the tasks makes this run in parallel
-        tick_crew.kickoff()
-        return tick_crew.tasks
-
-    @listen(execute_concurrent_crew)
-    def gather_and_execute_physical_tick(self, completed_tasks):
-        """Phase 3: Extract intents and step Mesa."""
-        import simulation
-        batch_intents = []
+        # Parallel execution with Sync Anchor
+        crew = self.rescue_crew.crew(tasks)
+        result = crew.kickoff()
         
-        for task in completed_tasks:
-            intent = getattr(task.output, 'pydantic', None)
+        # Extract intents from the validated Pydantic models in tasks_output
+        batch_intents = {}
+        for task_output in result.tasks_output:
+            intent = task_output.pydantic
             if intent:
-                batch_intents.append(intent.model_dump())
-                print(f"[{intent.drone_id}] {intent.action} -> Rationale: {intent.rationale}")
+                batch_intents[intent.drone_id] = intent.model_dump()
+                print(f"Captured Intent: {intent.drone_id} -> {intent.action} ({intent.status}) -> ({intent.x}, {intent.y})")
         
-        # Step the mesa simulation once all agents have taken their actions
-        if simulation.sim_world:
-            simulation.sim_world.step()
-            print("--- TICK RESOLVED: Mesa Simulation Step Completed ---")
-            
         return batch_intents
 
-    @router(gather_and_execute_physical_tick)
-    def check_simulation_status(self):
-        """Checks if the mission objective is reached after the swarm step."""
-        if not self.state.simulation_active:
+    @router(gather_intents)
+    def execute_tick(self, batch_intents):
+        if not simulation.sim_world: return "end_mission"
+        
+        # Physics Step
+        simulation.sim_world.step(batch_intents)
+        
+        # UI Update (Immediate Broadcast)
+        from .tools.partition import get_current_map_state
+        state = get_current_map_state()
+        websocket_manager.send_to_ui("tick_update", state)
+        
+        if simulation.sim_world.mission_complete or getattr(simulation.sim_world, "mission_failed", False):
             return "end_mission"
-            
-        print("\n[RescueSwarmFlow] Checking Global Mission Status...")
-        import simulation
-        
-        if simulation.sim_world:
-            try:
-                if getattr(simulation.sim_world, "mission_complete", False):
-                    print("[RescueSwarmFlow] Mission AccomplISHED. Halting Swarm.")
-                    self.state.simulation_active = False
-                    return "end_mission"
-            except Exception as e:
-                print(f"Error checking status: {e}")
-        
-        # If not complete, loop back to the next swarm step
         return "swarm_loop"
 
     @listen("end_mission")
-    def final_report(self):
-        print("\nMISSION CONCLUDED")
-
+    def conclude(self):
+        print("Mission Concluded.")
+        self.state.simulation_active = False
 
 def kickoff():
     flow = SwarmCombinedFlow()
     flow.kickoff()
-    
+
 if __name__ == "__main__":
     kickoff()
-

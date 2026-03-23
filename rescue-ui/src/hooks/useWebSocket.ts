@@ -150,9 +150,9 @@ export const useWebSocket = ({
           });
 
           for (const l of agent_logs) {
-            const agent = l?.drone ? String(l.drone) : 'AGENT';
+            const agent = l?.drone_id ? String(l.drone_id) : 'AGENT';
             const message = l?.message ? String(l.message) : JSON.stringify(l);
-            const time = l?.time ? String(l.time) : '';
+            const time = l?.timestamp ? String(l.timestamp) : '';
             const logKey = `${agent}|${time}|${message}`;
 
             if (!seenLogsRef.current.has(logKey)) {
@@ -160,6 +160,12 @@ export const useWebSocket = ({
               addLog(agent, message, 'info');
             }
           }
+          return;
+        }
+
+        if (msg.type === 'agent_log') {
+          const { agent, message, type } = msg.payload ?? {};
+          addLog(agent || 'AGENT', message || '', type || 'info');
           return;
         }
 

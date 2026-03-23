@@ -95,7 +95,7 @@ def partition_grid_greedy_bfs(num_drones: int, base_pos_x: int, base_pos_y: int)
     # Weighting Logic (Lower score = Higher Priority for Greedy)
     def calculate_weight(cell):
         # We want to MINIMIZE this score to be 'Greedy' for best cells
-        # Formula: 0.4*Altitude + 0.3*TerrainType + 0.3*BuildingHeight
+        # Formula: 0.4*Altitude - 0.3*TerrainType
         
         # Altitude (Weight 0.4)
         altitude = float(cell.get('altitude', 0))
@@ -114,10 +114,8 @@ def partition_grid_greedy_bfs(num_drones: int, base_pos_x: int, base_pos_y: int)
         w_terrain = 0.3 * t_val
             
         # Building height (Weight 0.3)
-        b_height = float(cell.get('building_height', 0))
-        w_height = 0.3 * b_height
             
-        return w_altitude + w_terrain + w_height
+        return w_altitude - w_terrain
 
     #  Multi-Source BFS Setup
     base_pos = (base_pos_x, base_pos_y)
@@ -131,7 +129,6 @@ def partition_grid_greedy_bfs(num_drones: int, base_pos_x: int, base_pos_y: int)
     # --- STARVATION FIX: Spread Seeds ---
     # Instead of just base neighbors, we give each drone a different "sector seed"
     import math
-    print(f"DEBUG: Partitioning for {num_drones} drones. Spreading seeds...")
     for i in range(num_drones):
         drone_id = f"drone_{i+1}"
         # Calculate a point roughly 6 units away in a unique direction
@@ -216,16 +213,14 @@ def partition_grid_greedy_bfs(num_drones: int, base_pos_x: int, base_pos_y: int)
                     setattr(cell_agents[valid_cell], 'assigned_drone', smallest_drone)
                 nw = calculate_weight(grid_data[valid_cell])
                 heapq.heappush(pqs[smallest_drone], (nw, valid_cell))
-
-    
-    # Broadcast to UI: Partitioning Complete
-    try:
-        import websocket_manager
-        updated_state = get_current_map_state()
-        if "error" not in updated_state:
-            websocket_manager.send_to_ui("partitioning_complete", updated_state)
-    except Exception as e:
-        print(f"Broadcast complete error: {e}")
+    # # Broadcast to UI: Partitioning Complete
+    # try:
+    #     import websocket_manager
+    #     updated_state = get_current_map_state()
+    #     if "error" not in updated_state:
+    #         websocket_manager.send_to_ui("partitioning_complete", updated_state)
+    # except Exception as e:
+    #     print(f"Broadcast complete error: {e}")
         
     # INJECT DIRECTLY INTO MESA STATE
     if world:
@@ -252,10 +247,10 @@ def compute_rebalance(idle_drone_id: str, burdened_drone_id: str, current_assign
     # Transfer roughly 30% of the remaining queue
     num_to_transfer = len(burdened_queue) // 3
     
-    # Check idle drone's range (Battery - 15% safety reserve)
+    # Check idle drone's range (Battery - 10% safety reserve)
     # Each cell cost is roughly 2% battery + 1% for scanning
     idle_batt = drone_batteries.get(idle_drone_id, 100)
-    max_cells_by_batt = max(0, (idle_batt - 15) // 3)
+    max_cells_by_batt = max(0, (idle_batt - 10) // 3)
     
     transfer_count = min(num_to_transfer, max_cells_by_batt)
     if transfer_count <= 0:

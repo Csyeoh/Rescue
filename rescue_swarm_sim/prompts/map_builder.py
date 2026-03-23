@@ -11,6 +11,7 @@ CORE PLACEMENT LOGIC:
    - Leave at least one row or column empty every 3 to 4 units to act as streets.
    - Buildings should line up along these imaginary streets.
 4. Cluster Logic: Groups of buildings should not exceed 3x3 areas. Ensure there is at least 1-2 cells of terrain between different clusters or individual buildings.
+5. The survivor should be placed evenly accross the map, with 90% of them inside buildings, but not all place in the same area of building.
 
 SCENARIO GUIDELINES:
 - Downtown: Focused on clusters of 'multiple_story' buildings (6-10m). Use 'Avenues' (2-cell wide empty columns/rows).

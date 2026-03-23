@@ -1,328 +1,187 @@
 from fastmcp import FastMCP
 import sys
 import os
+import heapq
+import sqlite3
+import json
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-import simulation
+DB_PATH = "live_state.db"
 
-# Initialize the MCP Server
+def get_db_conn():
+    if not os.path.exists(DB_PATH):
+        # Create a temporary empty DB if it doesn't exist yet to prevent crash
+        conn = sqlite3.connect(DB_PATH)
+        conn.close()
+    return sqlite3.connect(DB_PATH, timeout=10)
+
 mcp = FastMCP("RescueSwarm")
 
 @mcp.tool()
-def discover_drones() -> list[str]:
-    """Returns a list of all active drone IDs available for command in the simulation."""
-    if not simulation.sim_world: return []
-    from simulation import DroneAgent
-    drones = []
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent):
-            drones.append(agent.unique_id)
-    return drones
-
-@mcp.tool()
-def check_battery(drone_id: str) -> int:
-    """Returns the current battery level (0-100) as an integer for a specific drone."""
-    if not simulation.sim_world: return -1
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            return agent.battery
-    return -1
-
-@mcp.tool()
-def get_status(drone_id: str) -> str:
-    """Returns the current status of the drone. Expected values are CHARGING, SEARCHING, IDLE or RETURNING."""
-    if not simulation.sim_world: return f"Error: simulation resting."
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            return agent.status
-    return f"Error: {drone_id} not found."
-
-@mcp.tool()
-def set_status(drone_id: str, new_status: str) -> str:
-    """Changes the drone's status to a new value (e.g. SEARCHING, RETURNING, CHARGING, IDLE)."""
-    if not simulation.sim_world: return f"Error: simulation resting."
-    from simulation import DroneAgent
-    valid_statuses = ["CHARGING", "SEARCHING", "IDLE", "RETURNING"]
-    if new_status not in valid_statuses:
-        return f"Error: Invalid status {new_status}."
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            agent.status = new_status
-            return f"Success: {drone_id} status changed to {new_status}"
-    return f"Error: {drone_id} not found."
-
-@mcp.tool()
-def get_current_pos(drone_id: str) -> dict:
-    """Returns the current (x, y) location of a given drone."""
-    if not simulation.sim_world: return {"error": "no sim"}
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            if agent.pos:
-                return {"x": agent.pos[0], "y": agent.pos[1]}
-            else:
-                return {"x": 9, "y": 9}
-    return {"error": f"{drone_id} not found."}
-
-@mcp.tool()
-def get_base_pos() -> dict:
-    """Returns the static base camp position (9, 9)."""
-    return {"x": 9, "y": 9}
-
-@mcp.tool()
-def get_priority_list(drone_id: str) -> list:
-    """Returns the list of (x, y) coordinates assigned to this drone to search."""
-    if not simulation.sim_world: return []
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            # Filter out already discovered cells globally
-            # Return up to 10 to keep context size manageable
-            remaining = [pos for pos in agent.priority_searching_list if pos not in simulation.sim_world.global_discovered_cells]
-            return remaining[:10]
-    return []
-
-@mcp.tool()
-def get_thermal_memory(drone_id: str) -> list:
-    """Returns the list of (x, y) thermal signatures this drone remembers it needs to check."""
-    if not simulation.sim_world: return []
-    from simulation import DroneAgent
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            return agent.thermal_memory
-    return []
-
-@mcp.tool()
-def mark_cell_discovered(drone_id: str, x: int, y: int) -> str:
-    """Marks a cell as completely searched so no other drones explore it."""
-    if not simulation.sim_world: return "Error: no sim"
-    simulation.sim_world.global_discovered_cells.add((x, y))
-    from simulation import DroneAgent
-    # Clean from drone's local list if present
-    for agent in simulation.sim_world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            if (x, y) in agent.priority_searching_list:
-                agent.priority_searching_list.remove((x, y))
-            if (x, y) in agent.thermal_memory:
-                agent.thermal_memory.remove((x, y))
-    simulation.sim_world.log_action(drone_id, f"Marked ({x}, {y}) as thoroughly searched.")
-    return f"Success: marked ({x}, {y}) as discovered."
-
-@mcp.tool()
-def move_drone(drone_id: str, x: int, y: int) -> str:
-    """
-    Moves a rescue drone to specific (x, y) coordinates on the grid.
-    Automatically drains battery by 1% per move, or recharges to 100% if moved to Base Camp (9,9).
-    Includes Passive Sensors: Scans adjacent grids for obstacles and thermal auras upon arrival.
-    """
-    if not (0 <= x < 20 and 0 <= y < 20):
-        return "Failure: Coordinates out of bounds. Grid is strictly 0 to 19."
-        
-    world = simulation.sim_world
-    if not world: return "Failure: Simulation not running."
-    from simulation import DroneAgent, CellAgent, SurvivorAgent
-    
-    drone = None
-    for agent in world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            drone = agent
-            break
-            
-    if not drone: return f"Error: {drone_id} not found."
-    if drone.battery < 2: return f"Failure: {drone_id} battery exhausted. Drone is grounded."
-
-    # Physical obstacles block movement
-    for obj in world.grid.get_cell_list_contents([(x, y)]):
-        if isinstance(obj, CellAgent) and getattr(obj, "is_obstacle", False):
-            obj.obstacle_discovered = True
-            world.log_action(drone_id, f"CRITICAL: Flight path to ({x}, {y}) blocked by physical obstacle!")
-            return f"Failure: Movement to ({x}, {y}) blocked by an obstacle. Route around it."
-
-    # Move logic
-    drone.move((x, y)) 
-    
-    if x == 9 and y == 9: # Base
-        drone.battery = 100
-        drone.status = "CHARGING"
-
-    # Passive Sensors
-    detected_obstacles = []
-    thermal_alert = False
-    
-    adjacent_coords = [(x, y-1), (x, y+1), (x-1, y), (x+1, y)]
-    for ax, ay in adjacent_coords:
-        if 0 <= ax < world.width and 0 <= ay < world.height:
-            contents = world.grid.get_cell_list_contents([(ax, ay)])
-            for obj in contents:
-                if isinstance(obj, CellAgent) and getattr(obj, "is_obstacle", False):
-                    if not obj.obstacle_discovered:
-                        detected_obstacles.append((ax, ay))
-                        obj.obstacle_discovered = True
-                
-                if getattr(obj, "thermal_aura", False):
-                    # Survivor not yet found in the grid?
-                    cell_survivors = world.grid.get_cell_list_contents([(ax, ay)])
-                    is_found = False
-                    for possible_sv in cell_survivors:
-                        if isinstance(possible_sv, SurvivorAgent) and possible_sv.found:
-                            is_found = True
-                    if not is_found:
-                        thermal_alert = True
-                        if (ax, ay) not in drone.thermal_memory:
-                            drone.thermal_memory.append((ax, ay))
-                elif isinstance(obj, SurvivorAgent) and not getattr(obj, "found", False):
-                    thermal_alert = True
-                    if (ax, ay) not in drone.thermal_memory:
-                        drone.thermal_memory.append((ax, ay))
-
-    log_msg = "Returned to Base Camp. Recharging to 100%." if (x == 9 and y == 9) else f"Moved to sector ({x}, {y})."
-    world.log_action(drone_id, log_msg)
-    
-    response_msg = f"Success: {drone_id} moved to ({x}, {y}). Battery now at {drone.battery}%."
-    if detected_obstacles:
-        obs_str = ", ".join([f"({ox},{oy})" for ox, oy in detected_obstacles])
-        response_msg += f" [PROXIMITY WARNING: New obstacles mapped at {obs_str}.]"
-        
-    if thermal_alert:
-        response_msg += " [SENSOR ALERT: Faint thermal aura detected in an adjacent sector! Added to thermal_memory.]"
-        
-    return response_msg
-
-@mcp.tool()
-def thermal_scan(drone_id: str) -> str:
-    """
-    Performs a high-powered thermal scan at the drone's EXACT current (x, y) location.
-    Returns a message indicating if a hidden survivor was found on this specific grid square.
-    """
-    world = simulation.sim_world
-    if not world: return "Failure: Simulation not running."
-    from simulation import DroneAgent, SurvivorAgent
-    
-    drone = None
-    for agent in world.schedule.agents:
-        if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
-            drone = agent
-            break
-            
-    if not drone or not drone.pos: return f"Error: {drone_id} not found."
-        
-    dx, dy = drone.pos
-    contents = world.grid.get_cell_list_contents([(dx, dy)])
-    
-    for obj in contents:
-        if isinstance(obj, SurvivorAgent):
-            if not obj.found:
-                obj.found = True
-                world.log_action(drone_id, f"URGENT: Thermal match! Discovered {obj.unique_id} at ({dx}, {dy})!")
-                
-                # Global condition triggers if all are found
-                world.found_survivors += 1 
-                if world.total_survivors > 0 and world.found_survivors == world.total_survivors:
-                    if not getattr(world, "mission_complete", False):
-                        world.mission_complete = True
-                        world.log_action("SYSTEM", "🎉 MISSION ACCOMPLISHED! All survivors rescued.")
-                
-                return f"SUCCESS: Thermal signature detected! {obj.unique_id} found and logged."
-            else:
-                return "Thermal signature detected, but survivor is already marked as rescued."
-                
-    return "Scan complete. No thermal signatures detected at this exact location."
-
-@mcp.tool()
-def get_mission_data() -> dict:
-    """
-    Returns global state such as the simulation status.
-    """
-    world = simulation.sim_world
-    if not world: 
-        return {"mission_status": "error", "error": "sim offline"}
-        
+def get_drone_context(drone_id: str) -> dict:
+    """Returns battery, position, status, and search list for a drone."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y, battery, status, is_destroyed, thermal_memory, priority_list FROM drones WHERE id=?", (drone_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if not row: return {"error": "not found"}
     return {
-        "mission_status": "complete" if getattr(world, "mission_complete", False) else "in_progress",
-        "remaining_survivors": world.total_survivors - world.found_survivors,
-        "global_discovered_count": len(world.global_discovered_cells)
+        "id": drone_id, "pos": {"x": row[0], "y": row[1]}, "battery": row[2], 
+        "status": row[3], "is_destroyed": bool(row[4]),
+        "thermal_memory": json.loads(row[5]), "priority_list": json.loads(row[6])
     }
 
 @mcp.tool()
-def log_strategy(drone_id: str, reasoning: str) -> str:
-    """Logs a strategic Chain-of-Thought reasoning message to the simulation log."""
-    if not simulation.sim_world: return "Error: no sim"
-    simulation.sim_world.log_action(drone_id, f"STRATEGY: {reasoning}")
-    return "Success: reasoning logged."
+def thermal_scan(drone_id: str) -> str:
+    """Reveals adjacent cells, detects auras, and updates lists in DB."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    # Get current pos
+    cursor.execute("SELECT x, y, thermal_memory FROM drones WHERE id=?", (drone_id,))
+    d_row = cursor.fetchone()
+    if not d_row: return "Error: drone not found"
+    cx, cy, t_mem_raw = d_row
+    t_mem = json.loads(t_mem_raw)
+    
+    # Reveal and Check Auras
+    adj = [(cx, cy), (cx, cy-1), (cx, cy+1), (cx-1, cy), (cx+1, cy)]
+    revealed = 0
+    new_auras = []
+    for ax, ay in adj:
+        if 0 <= ax < 20 and 0 <= ay < 20:
+            cursor.execute("UPDATE cells SET obstacle_discovered = 1 WHERE x=? AND y=? AND is_obstacle=1", (ax, ay))
+            cursor.execute("SELECT thermal_aura FROM cells WHERE x=? AND y=?", (ax, ay))
+            c_row = cursor.fetchone()
+            if c_row and c_row[0] == 1:
+                pos = [ax, ay]
+                if pos not in t_mem:
+                    t_mem.append(pos)
+                    new_auras.append(f"({ax},{ay})")
+            
+            # Clean global lists (simulated by updating all drone rows)
+            cursor.execute("SELECT id, priority_list FROM drones")
+            all_drones = cursor.fetchall()
+            for did, p_list_raw in all_drones: 
+                p_list = json.loads(p_list_raw)
+                if [ax, ay] in p_list:
+                    p_list.remove([ax, ay])
+                    cursor.execute("UPDATE drones SET priority_list=? WHERE id=?", (json.dumps(p_list), did))
+            revealed += 1
+
+    cursor.execute("UPDATE drones SET thermal_memory=? WHERE id=?", (json.dumps(t_mem), drone_id))
+    conn.commit()
+    conn.close()
+    msg = f"Revealed {revealed} cells."
+    if new_auras: msg += f" Thermal auras at {', '.join(new_auras)}."
+    return msg
 
 @mcp.tool()
-def get_map_intel() -> str:
-    """Returns a string representing the known map (altitudes and discovered obstacles)."""
-    if not simulation.sim_world: return "Error: no sim"
-    world = simulation.sim_world
-    from simulation import CellAgent
-    
-    intel = []
-    for contents, (x, y) in world.grid.coord_iter():
-        for obj in contents:
-            if isinstance(obj, CellAgent):
-                obs_status = "OBSTACLE" if obj.is_obstacle and obj.obstacle_discovered else "CLEAR"
-                intel.append(f"({x},{y}): Alt {obj.altitude:.1f}m, {obj.terrain_type}, {obs_status}")
-    return "\n".join(intel)
+def get_claimable_pool() -> list:
+    """Returns list of drones with available waypoints."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, priority_list, status FROM drones WHERE status IN ('RETURNING', 'CHARGING', 'IDLE')")
+    rows = cursor.fetchall()
+    conn.close()
+    pool = []
+    for r in rows:
+        p_list = json.loads(r[1])
+        if p_list:
+            pool.append({"drone_id": r[0], "count": len(p_list), "status": r[2], "target_x": p_list[0][0], "target_y": p_list[0][1]})
+    return pool
 
 @mcp.tool()
-def get_path_step(drone_id: str, target_x: int, target_y: int) -> dict:
-    """
-    Calculates the next (x, y) coordinate to move towards a target using A* pathfinding.
-    Avoids all known obstacles. Returns {'x': next_x, 'y': next_y}.
-    """
-    if not simulation.sim_world: return {"error": "no sim"}
-    world = simulation.sim_world
+def claim_waypoints(requesting_drone_id: str, target_drone_id: str, count: int) -> str:
+    """Transfers waypoints between drones in DB."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT priority_list FROM drones WHERE id=?", (requesting_drone_id,))
+    req_list = json.loads(cursor.fetchone()[0])
+    cursor.execute("SELECT priority_list FROM drones WHERE id=?", (target_drone_id,))
+    tar_list = json.loads(cursor.fetchone()[0])
     
-    from simulation import DroneAgent, CellAgent
-    drone = next((a for a in world.schedule.agents if isinstance(a, DroneAgent) and a.unique_id == drone_id), None)
-    if not drone or not drone.pos: return {"error": "drone not found"}
+    to_transfer = tar_list[-count:]
+    new_tar = tar_list[:-count]
+    req_list.extend(to_transfer)
     
-    start = drone.pos
+    cursor.execute("UPDATE drones SET priority_list=? WHERE id=?", (json.dumps(req_list), requesting_drone_id))
+    cursor.execute("UPDATE drones SET priority_list=? WHERE id=?", (json.dumps(new_tar), target_drone_id))
+    conn.commit()
+    conn.close()
+    return f"Claimed {len(to_transfer)} waypoints."
+
+@mcp.tool()
+def check_task_viability(drone_id: str, target_x: int, target_y: int) -> dict:
+    """Calculates A* distance to target and back to base."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y, battery FROM drones WHERE id=?", (drone_id,))
+    d_row = cursor.fetchone()
+    if not d_row: return {"error": "not found"}
+    start = (d_row[0], d_row[1])
+    battery = d_row[2]
+    
+    cursor.execute("SELECT x, y FROM cells WHERE is_obstacle=1 AND obstacle_discovered=1")
+    obs = set(cursor.fetchall())
+    conn.close()
+
+    def get_dist(a, b):
+        frontier = [(0, a)]
+        came_from = {a: None}; cost = {a: 0}
+        while frontier:
+            current = heapq.heappop(frontier)[1]
+            if current == b: break
+            for dx, dy in [(0,1),(0,-1),(1,0),(-1,0)]:
+                nxt = (current[0]+dx, current[1]+dy)
+                if 0<=nxt[0]<20 and 0<=nxt[1]<20 and nxt not in obs:
+                    new_c = cost[current] + 1
+                    if nxt not in cost or new_c < cost[nxt]:
+                        cost[nxt] = new_c
+                        priority = new_c + abs(b[0]-nxt[0]) + abs(b[1]-nxt[1])
+                        heapq.heappush(frontier, (priority, nxt))
+                        came_from[nxt] = current
+        return cost.get(b, abs(a[0]-b[0]) + abs(a[1]-b[1])) # Fallback to Manhattan if blocked/unknown
+
+    d1 = get_dist(start, (target_x, target_y))
+    d2 = get_dist((target_x, target_y), (9, 9))
+    required = (d1 + d2) * 2 + 10
+    return {"viable": battery >= required, "required": required, "current": battery}
+
+@mcp.tool()
+def get_navigation_step(drone_id: str, target_x: int, target_y: int) -> dict:
+    """Calculates one A* step towards target avoiding known obstacles."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y FROM drones WHERE id=?", (drone_id,))
+    start = cursor.fetchone()
+    cursor.execute("SELECT x, y FROM cells WHERE is_obstacle=1 AND obstacle_discovered=1")
+    obs = set(cursor.fetchall())
+    conn.close()
+    
     goal = (target_x, target_y)
+    if start == goal: return {"x": start[0], "y": start[1]}
     
-    # Simple Manhattan A*
-    import heapq
-    def heuristic(a, b): return abs(a[0] - b[0]) + abs(a[1] - b[1])
-    
-    obstacles = set()
-    for contents, (x, y) in world.grid.coord_iter():
-        for obj in contents:
-            if isinstance(obj, CellAgent) and obj.is_obstacle and obj.obstacle_discovered:
-                obstacles.add((x, y))
-                
-    frontier = []
-    heapq.heappush(frontier, (0, start))
-    came_from = {start: None}
-    cost_so_far = {start: 0}
-    
+    frontier = [(0, start)]
+    came_from = {start: None}; cost = {start: 0}
     while frontier:
         current = heapq.heappop(frontier)[1]
         if current == goal: break
-        
-        for dx, dy in [(0,1), (0,-1), (1,0), (-1,0)]:
-            next_node = (current[0] + dx, current[1] + dy)
-            if 0 <= next_node[0] < 20 and 0 <= next_node[1] < 20 and next_node not in obstacles:
-                new_cost = cost_so_far[current] + 1
-                if next_node not in cost_so_far or new_cost < cost_so_far[next_node]:
-                    cost_so_far[next_node] = new_cost
-                    priority = new_cost + heuristic(goal, next_node)
-                    heapq.heappush(frontier, (priority, next_node))
-                    came_from[next_node] = current
-                    
-    # Reconstruct path
+        for dx, dy in [(0,1),(0,-1),(1,0),(-1,0)]:
+            nxt = (current[0]+dx, current[1]+dy)
+            if 0<=nxt[0]<20 and 0<=nxt[1]<20 and nxt not in obs:
+                new_c = cost[current] + 1
+                if nxt not in cost or new_c < cost[nxt]:
+                    cost[nxt] = new_c
+                    heapq.heappush(frontier, (new_c + abs(goal[0]-nxt[0]) + abs(goal[1]-nxt[1]), nxt))
+                    came_from[nxt] = current
+    
+    if goal not in came_from: return {"x": start[0], "y": start[1]}
     path = []
     curr = goal
-    if goal not in came_from: return {"x": start[0], "y": start[1]} # No path
-    
     while curr != start:
         path.append(curr)
         curr = came_from[curr]
-    
-    next_step = path[-1] # The first step from start
-    return {"x": next_step[0], "y": next_step[1]}
+    return {"x": path[-1][0], "y": path[-1][1]}
 
 if __name__ == "__main__":
-    mcp.run_stdio()
+    mcp.run()

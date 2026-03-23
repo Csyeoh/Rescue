@@ -45,6 +45,8 @@
 - Defined scenario-specific placement rules (Avenues for Downtown, Yards for Suburban).
 - Added "Mountain Outpost" scenario focused on topographic alignment.
 
-### UI & Logic (rescue-ui)
-- Integrated "Mountain Outpost" into `ConfigPage`.
-- Updated `useMissionControl` to support the new scenario in random generation.
+### Real-time Agent Monitoring
+- **CrewAI Hooks:** Implemented `after_llm_call`, `before_tool_call`, and `after_tool_call` to capture internal agent logic.
+- **Live Brain Feed:** Agent reasoning and tool interactions are now broadcast via WebSocket and rendered in the Mission Log.
+- **Precise Attribution:** Each log entry is now correctly attributed to the specific drone ID (e.g., drone_1) instead of a generic role.
+- **UI Feedback Loop:** Integrated `agent_log` message type in the frontend for immediate visual feedback of swarm intelligence.

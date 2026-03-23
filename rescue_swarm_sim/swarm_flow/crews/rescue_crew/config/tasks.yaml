@@ -1,64 +1,57 @@
 searching_task:
   description: >
-    Execute the SEARCHING state logic for {drone_id}.
-    1. CONTEXT: Check your battery via check_battery("{drone_id}"), position via get_current_pos("{drone_id}"), and priorities via get_priority_list("{drone_id}").
-    2. REASONING: Use log_strategy("{drone_id}", "reasoning...") to explain your path selection and battery safety.
-    3. MOVEMENT:
-       - IF you have thermal signatures in memory: prioritizing those. 
-       - Calculate the path to your highest priority coordinate using get_path_step("{drone_id}", target_x, target_y).
-       - This tool returns the exact (x, y) step to take while avoiding known obstacles. 
-       - Call move_drone(drone_id="{drone_id}", x=next_x, y=next_y) to execute the step.
-    4. SENSING: Once moved, if the cell is new, perform a thermal_scan("{drone_id}") and mark_cell_discovered("{drone_id}", x, y).
-
-    You must output exactly ONE decisive action tool call, and then format your output according to the pydantic structure provided.
+    PHASE: SEARCHING Protocol for {drone_id}.
+    1. SCAN: Call `thermal_scan("{drone_id}")`.
+    2. INTEL: Call `get_drone_context("{drone_id}")`.
+    3. TARGET: Decide target (thermal_memory first, then priority list).
+    4. VIABILITY: Call `check_task_viability` for the target.
+    5. SAFETY: If NOT viable, set status to RETURNING.
+    6. NAVIGATION: Call `get_navigation_step` for the move.
+    7. FINAL ACTION: Output the intent as valid JSON.
+    
+    CRITICAL: Your final answer MUST be a valid JSON object. Use double quotes.
+    Example: {{"drone_id": "{drone_id}", "action": "move", "x": 10, "y": 5, "status": "SEARCHING"}}
   expected_output: >
-    A fully populated DroneIntent detailing your tool call, rationale, and any status change.
+    A JSON object matching the DroneIntent schema.
   agent: search_and_rescue_drone
-  async_execution: true
-
-charging_task:
-  description: >
-    Execute the CHARGING state logic for {drone_id}.
-    Check your battery by calling check_battery("{drone_id}").
-    Check your priority cells by calling get_priority_list("{drone_id}").
-
-    Logic:
-    - Inspect your priority cells list.
-    - If you have cells: calculate if `current_battery` >= (cost_to_go_to_cell + cost_to_return_from_cell + buffer).
-        - If Yes: output action to status SEARCHING and a move_drone() towards the cell.
-        - If No: Continue charging. Output action "CONTINUE CHARGING".
-    - If you don't have cells: Just output action "CONTINUE CHARGING - AWAITING REBALANCE".
-  expected_output: >
-    A fully populated DroneIntent detailing your tool call, rationale, and any status change.
-  agent: search_and_rescue_drone
-  async_execution: true
 
 returning_task:
   description: >
-    Execute the RETURNING state logic for {drone_id}.
-    Check your position by calling get_current_pos("{drone_id}").
-
-    Logic:
-    - Compute the delta to the Base Pos (9, 9).
-    - If you are at Base Pos, output action to change status to CHARGING.
-    - Otherwise, output action to move_drone() 1 step closer to Base Pos.
+    PHASE: RETURNING Protocol for {drone_id}.
+    1. SCAN: Call `thermal_scan("{drone_id}")`.
+    2. NAVIGATION: Call `get_navigation_step` towards (9,9).
+    3. TRANSITION: If at (9,9), status = CHARGING.
+    4. FINAL ACTION: Output intent as valid JSON.
+    
+    CRITICAL: Your final answer MUST be a valid JSON object. Use double quotes.
+    Example: {{"drone_id": "{drone_id}", "action": "move", "x": 9, "y": 9, "status": "CHARGING"}}
   expected_output: >
-    A fully populated DroneIntent detailing your tool call, rationale, and any status change.
+    A JSON object matching the DroneIntent schema.
   agent: search_and_rescue_drone
-  async_execution: true
+
+charging_task:
+  description: >
+    PHASE: CHARGING Protocol for {drone_id}.
+    1. INTEL: Call `get_drone_context("{drone_id}")`.
+    2. DECISION: If battery sufficient for next target, status = SEARCHING.
+    3. FINAL ACTION: Output intent as valid JSON.
+    
+    CRITICAL: Your final answer MUST be a valid JSON object. Use double quotes.
+    Example: {{"drone_id": "{drone_id}", "action": "wait", "x": 9, "y": 9, "status": "CHARGING"}}
+  expected_output: >
+    A JSON object matching the DroneIntent schema.
+  agent: search_and_rescue_drone
 
 idle_task:
   description: >
-    Execute the IDLE state logic for {drone_id}.
-    Check your battery by calling check_battery("{drone_id}").
-    Check your priority cells by calling get_priority_list("{drone_id}").
-
-    Logic:
-    - Inspect your priority cells list.
-    - Calculate if you have enough battery to reach it AND return to base (+10% buffer).
-    - If Yes: Output action to change status to SEARCHING and move_drone() towards it.
-    - If no list exists: output action "IDLE - AWAITING REBALANCE".
+    PHASE: IDLE Protocol for {drone_id}.
+    1. SEARCH: Call `get_claimable_pool()`.
+    2. CLAIM: Call `claim_waypoints` and `check_task_viability`.
+    3. DECISION: If viable, status = SEARCHING. If not viable, status = RETURNING.
+    4. FINAL ACTION: Output intent as valid JSON.
+    
+    CRITICAL: Your final answer MUST be a valid JSON object. Use double quotes.
+    Example: {{"drone_id": "{drone_id}", "action": "move", "x": 9, "y": 9, "status": "RETURNING"}}
   expected_output: >
-    A fully populated DroneIntent detailing your tool call, rationale, and any status change.
+    A JSON object matching the DroneIntent schema.
   agent: search_and_rescue_drone
-  async_execution: true

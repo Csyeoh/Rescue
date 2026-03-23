@@ -127,7 +127,7 @@ def compute_rebalance(idle_drone_id: str, burdened_drone_id: str, current_assign
     # A rough heuristic: 1 cell takes at least 2% battery. We need 10% reserve.
     # Battery available for exploration = battery - reserve
     idle_batt = drone_batteries.get(idle_drone_id, 100)
-    max_cells_by_batt = max(0, (idle_batt - 15) // 3)
+    max_cells_by_batt = max(0, (idle_batt - 10) // 3)
     
     transfer_count = min(num_to_transfer, max_cells_by_batt)
     if transfer_count <= 0:
