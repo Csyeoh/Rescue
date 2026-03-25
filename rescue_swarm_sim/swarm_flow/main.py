@@ -54,19 +54,13 @@ class SwarmCombinedFlow(Flow[SwarmMissionState]):
         else:
             print("Dispatcher: All drones are busy. Skipping dispatch task.")
 
-        # 2. Add Drone Tasks
-        for i, drone in enumerate(drones):
-            d_id = drone.unique_id
-            state = drone.status
-            task_map = {
-                "SEARCHING": "searching_task",
-                "RETURNING": "returning_task",
-                "CHARGING": "charging_task",
-                "IDLE": "idle_task"
-            }
-            # The "Anchor" Logic: Last task is synchronous (is_async=False)
-            is_last = (i == len(drones) - 1)
-            tasks.append(self.rescue_crew.build_task(task_map.get(state, "idle_task"), d_id, is_async=not is_last))
+        # 2. Add Batch Drone Task
+        fleet_state_lines = []
+        for drone in drones:
+            fleet_state_lines.append(f"- Drone ID: {drone.unique_id}, Status: {drone.status}")
+        fleet_state_str = "\n".join(fleet_state_lines)
+        
+        tasks.append(self.rescue_crew.build_batch_task(fleet_state_str))
         
         # Parallel execution with Sync Anchor
         t_crew_start = time.time()
@@ -78,11 +72,13 @@ class SwarmCombinedFlow(Flow[SwarmMissionState]):
         # Extract intents from the validated Pydantic models in tasks_output
         batch_intents = {}
         for task_output in result.tasks_output:
-            intent = getattr(task_output, "pydantic", None)
-            # Only process DroneIntents (ignore the Dispatcher's output here)
-            if intent and hasattr(intent, 'drone_id') and intent.drone_id != "swarm":
-                batch_intents[intent.drone_id] = intent.model_dump()
-                print(f"Captured Intent: {intent.drone_id} -> {intent.action} ({intent.status}) -> ({intent.x}, {intent.y})")
+            out_model = getattr(task_output, "pydantic", None)
+            if out_model:
+                if hasattr(out_model, 'intents') and isinstance(out_model.intents, list):
+                    for intent in out_model.intents:
+                        if hasattr(intent, 'drone_id') and getattr(intent, 'drone_id') != "swarm":
+                            batch_intents[intent.drone_id] = intent.model_dump()
+                            print(f"Captured Intent: {intent.drone_id} -> {intent.action} ({intent.status}) -> ({intent.x}, {intent.y})")
         
         self.state.current_intents = batch_intents
 
