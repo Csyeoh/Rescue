@@ -45,13 +45,13 @@ def generate_semantic_blueprint(scenario: str, num_survivors: int) -> MapBluepri
         )
         blueprint = MapBlueprint.model_validate_json(response.text)
         
-        # CONSTRAINT: Avoid corners (0,0), (0,19), (19,0), (19,19)
-        for s in blueprint.survivors:
-            if s.x == 0 and s.y == 0: s.x, s.y = 1, 1
-            if s.x == 0 and s.y == 19: s.x, s.y = 1, 18
-            if s.x == 19 and s.y == 0: s.x, s.y = 18, 1
-            if s.x == 19 and s.y == 19: s.x, s.y = 18, 18
-            
+        # FAIL-SAFE: Filter out any survivors accidentally placed within 2-cell buffer of base (9,9)
+        filtered_survivors = [
+            s for s in blueprint.survivors 
+            if not (s.x == 9 and s.y == 9)
+        ]
+        blueprint.survivors = filtered_survivors
+        
         return blueprint
     except Exception as e:
         print(f"AI Generation Failed: {e}")

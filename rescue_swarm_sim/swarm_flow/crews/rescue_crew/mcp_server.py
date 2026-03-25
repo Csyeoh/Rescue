@@ -1,229 +1,252 @@
 from fastmcp import FastMCP
-from typing import Optional
-import argparse
+import sys
 import os
-import requests
+import heapq
+import json
+import time
 
-# Initialize the MCP Server (Perception Layer only)
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')))
+import db
+
 mcp = FastMCP("RescueSwarm")
 
-BASE_URL = os.getenv("RESCUE_API_MCP_BASE_URL", "http://127.0.0.1:8000/api/mcp")
-
 @mcp.tool()
-def check_battery(drone_id: str) -> int:
-    """Returns the current battery level (0-100) for a drone."""
-    try:
-        r = requests.get(f"{BASE_URL}/drone/{drone_id}/battery")
-        return r.json() if r.status_code == 200 else -1
-    except: return -1
-
-@mcp.tool()
-def get_status(drone_id: str) -> str:
-    """Returns the current status (SEARCHING, RETURNING, etc.)."""
-    try:
-        r = requests.get(f"{BASE_URL}/drone/{drone_id}/status")
-        return r.json() if r.status_code == 200 else "Error: sim offline"
-    except: return "Error: sim offline"
-
-@mcp.tool()
-def get_current_pos(drone_id: str) -> dict:
-    """Returns the current (x, y) location of a given drone."""
-    try:
-        r = requests.get(f"{BASE_URL}/drone/{drone_id}/pos")
-        return r.json() if r.status_code == 200 else {"error": "no sim"}
-    except: return {"error": "no sim"}
-
-@mcp.tool()
-def get_next_waypoint(drone_id: str) -> dict:
-    """Returns the next undiscovered (x, y) target for this drone."""
-    try:
-        r = requests.get(f"{BASE_URL}/drone/{drone_id}/waypoints")
-        if r.status_code == 200:
-            wps = r.json()
-            if wps:
-                return {"has_waypoint": True, "x": wps[0][0], "y": wps[0][1], "remaining_count": len(wps)}
-        return {"has_waypoint": False, "remaining_count": 0}
-    except: return {"error": "no sim"}
-
-@mcp.tool()
-def get_thermal_memory(drone_id: str) -> list:
-    """Returns the list of detected thermal coordinates."""
-    try:
-        r = requests.get(f"{BASE_URL}/drone/{drone_id}/thermal")
-        return r.json() if r.status_code == 200 else []
-    except: return []
-
-@mcp.tool()
-def scan_adjacent(drone_id: str) -> dict:
-    """Scan the 4 adjacent cells around the drone and return obstacle/thermal/survivor signals."""
-    try:
-        r = requests.get(f"{BASE_URL}/drone/{drone_id}/scan_adjacent")
-        return r.json() if r.status_code == 200 else {"error": "API error"}
-    except:
-        return {"error": "no sim"}
-
-@mcp.tool()
-def step_towards(drone_id: str, target_x: int, target_y: int) -> dict:
-    """Computes the optimal 1-step move (nx, ny) towards a target, avoiding obstacles."""
-    try:
-        r = requests.get(f"{BASE_URL}/drone/{drone_id}/step_towards", params={"tx": target_x, "ty": target_y})
-        return r.json() if r.status_code == 200 else {"error": "API error"}
-    except: return {"error": "no sim"}
-
-@mcp.tool()
-def thermal_scan_preview(drone_id: str) -> str:
-    """Quick preview of current cell for heat signatures (does not rescue)."""
-    try:
-        r = requests.get(f"{BASE_URL}/drone/{drone_id}/thermal_scan")
-        return r.json() if r.status_code == 200 else "Error"
-    except: return "Error"
-
-@mcp.tool()
-def submit_intent(
-    drone_id: str,
-    action: str,
-    target_x: Optional[int] = None,
-    target_y: Optional[int] = None,
-    rationale: Optional[str] = None,
-    new_status: Optional[str] = None,
-) -> str:
-    """Submit a drone intent to the backend to be applied to the simulation.
-
-    Note: action must be one of MOVE / THERMAL_SCAN / RETURN_TO_BASE / CONTINUE_CHARGING / IDLE.
-    Values like SEARCHING/CHARGING/RETURNING are statuses and belong in new_status, not action.
-    """
-    try:
-        allowed_actions = {"MOVE", "THERMAL_SCAN", "RETURN_TO_BASE", "CONTINUE_CHARGING", "IDLE"}
-        allowed_statuses = {"SEARCHING", "CHARGING", "RETURNING", "IDLE"}
-
-        action_norm = (action or "").strip().upper()
-        action_aliases = {
-            "SCAN": "THERMAL_SCAN",
-            "THERMAL": "THERMAL_SCAN",
-            "THERMALSCAN": "THERMAL_SCAN",
-            "RETURN": "RETURN_TO_BASE",
-            "CHARGE": "CONTINUE_CHARGING",
-        }
-        action_norm = action_aliases.get(action_norm, action_norm)
-
-        if action_norm in allowed_statuses and action_norm not in allowed_actions:
-            if new_status is None:
-                new_status = action_norm
-            if action_norm == "SEARCHING":
-                action_norm = "MOVE"
-            elif action_norm == "RETURNING":
-                action_norm = "RETURN_TO_BASE"
-            elif action_norm == "CHARGING":
-                action_norm = "CONTINUE_CHARGING"
-            else:
-                action_norm = "IDLE"
-            if rationale is None:
-                rationale = ""
-            rationale = (rationale + " | " if rationale else "") + "Coerced status-like action into new_status."
-
-        if action_norm not in allowed_actions:
-            if rationale is None:
-                rationale = ""
-            rationale = (rationale + " | " if rationale else "") + f"Unknown action '{action_norm}', defaulting to IDLE."
-            action_norm = "IDLE"
-
-        pos_r = requests.get(f"{BASE_URL}/drone/{drone_id}/pos")
-        pos = pos_r.json() if pos_r.status_code == 200 else {"x": 9, "y": 9}
-        cx, cy = int(pos.get("x", 9)), int(pos.get("y", 9))
-
-        if action_norm == "MOVE" and target_x is not None and target_y is not None:
-            if int(target_x) == cx and int(target_y) == cy:
-                action_norm = "IDLE"
-                if rationale is None:
-                    rationale = ""
-                rationale = (rationale + " | " if rationale else "") + "MOVE target equals current position; converted to IDLE."
-            if abs(cx - int(target_x)) + abs(cy - int(target_y)) != 1:
-                step_r = requests.get(
-                    f"{BASE_URL}/drone/{drone_id}/step_towards",
-                    params={"tx": int(target_x), "ty": int(target_y)}
-                )
-                step = step_r.json() if step_r.status_code == 200 else {"x": cx, "y": cy}
-                target_x, target_y = int(step.get("x", cx)), int(step.get("y", cy))
-                if rationale is None:
-                    rationale = ""
-                rationale = (rationale + " | " if rationale else "") + f"Coerced MOVE target to 1-step ({target_x},{target_y})."
-
-        if target_x is None or target_y is None:
-            if action_norm == "MOVE":
-                wp_r = requests.get(f"{BASE_URL}/drone/{drone_id}/waypoints")
-                wps = wp_r.json() if wp_r.status_code == 200 else []
-                if wps:
-                    tx, ty = int(wps[0][0]), int(wps[0][1])
-                else:
-                    tx, ty = (0, 0) if (cx, cy) == (9, 9) else (9, 9)
-
-                step_r = requests.get(f"{BASE_URL}/drone/{drone_id}/step_towards", params={"tx": tx, "ty": ty})
-                step = step_r.json() if step_r.status_code == 200 else {"x": cx, "y": cy}
-                target_x, target_y = int(step.get("x", cx)), int(step.get("y", cy))
-                if rationale is None:
-                    rationale = f"Auto-filled MOVE target via step_towards to ({target_x},{target_y})"
-            else:
-                target_x, target_y = cx, cy
-                if rationale is None:
-                    rationale = "Auto-filled target to current position"
-        if rationale is None:
-            rationale = "No rationale provided"
-    except Exception:
-        if target_x is None:
-            target_x = 9
-        if target_y is None:
-            target_y = 9
-        if rationale is None:
-            rationale = "Auto-filled intent fields after error"
-
-    payload = {
-        "drone_id": drone_id,
-        "action": action_norm,
-        "target_x": target_x,
-        "target_y": target_y,
-        "rationale": rationale,
-        "new_status": new_status
+def get_drone_context(drone_id: str) -> dict:
+    """Returns battery, position, status, assigned sector, and thermal memory for a drone."""
+    t0 = time.time()
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y, battery, status, is_destroyed, thermal_memory, assigned_sector FROM drones WHERE id=?", (drone_id,))
+    row = cursor.fetchone()
+    conn.close()
+    print(f"⏱️ [Timing] MCP get_drone_context took {time.time()-t0:.4f}s", file=sys.stderr)
+    if not row: return {"error": "not found"}
+    t_mem = json.loads(row[5]) if row[5] else []
+    a_sec = json.loads(row[6]) if row[6] else None
+    return {
+        "id": drone_id, "pos": {"x": row[0], "y": row[1]}, "battery": row[2], 
+        "status": row[3], "is_destroyed": bool(row[4]),
+        "thermal_memory": t_mem if t_mem is not None else [], 
+        "assigned_sector": a_sec
     }
-    try:
-        r = requests.post(f"{BASE_URL}/intent", json=payload)
-        if r.status_code == 200:
-            return r.text[:300]
-        return f"Error: {r.status_code}"
-    except Exception as e:
-        return f"Error: {str(e)}"
 
 @mcp.tool()
-def get_distance_to_base(drone_id: str) -> dict:
-    """Returns distance to (9,9) and safety status."""
-    try:
-        pos_r = requests.get(f"{BASE_URL}/drone/{drone_id}/pos")
-        batt_r = requests.get(f"{BASE_URL}/drone/{drone_id}/battery")
-        if pos_r.status_code != 200 or batt_r.status_code != 200:
-            return {"error": "sim offline"}
-        pos = pos_r.json()
-        batt = batt_r.json()
-        if "x" not in pos: return {"error": "no pos"}
-        dist = abs(pos["x"] - 9) + abs(pos["y"] - 9)
-        return {
-            "current_pos": pos,
-            "base_pos": {"x": 9, "y": 9},
-            "distance": dist,
-            "safe_to_continue": batt > dist + 5
-        }
-    except: return {"error": "calculation error"}
+def thermal_scan(drone_id: str) -> str:
+    """Reveals adjacent cells, detects auras, and updates lists in DB."""
+    t0 = time.time()
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    # Get current pos
+    cursor.execute("SELECT x, y, thermal_memory FROM drones WHERE id=?", (drone_id,))
+    d_row = cursor.fetchone()
+    if not d_row: return "Error: drone not found"
+    cx, cy, t_mem_raw = d_row
+    t_mem_data = json.loads(t_mem_raw) if t_mem_raw else []
+    t_mem = t_mem_data if t_mem_data is not None else []
+    
+    # Reveal and Check Auras
+    adj = [(cx, cy), (cx, cy-1), (cx, cy+1), (cx-1, cy), (cx+1, cy)]
+    revealed = 0
+    new_auras = []
+    for ax, ay in adj:
+        if 0 <= ax < 20 and 0 <= ay < 20:
+            # Mark as revealed and discovered (if obstacle)
+            cursor.execute("UPDATE cells SET revealed = 1, obstacle_discovered = CASE WHEN is_obstacle = 1 THEN 1 ELSE obstacle_discovered END WHERE x=? AND y=?", (ax, ay))
+            
+            cursor.execute("SELECT thermal_aura FROM cells WHERE x=? AND y=?", (ax, ay))
+            c_row = cursor.fetchone()
+            if c_row and c_row[0] == 1:
+                pos = [ax, ay]
+                if pos not in t_mem:
+                    t_mem.append(pos)
+                    new_auras.append(f"({ax},{ay})")
+            revealed += 1
+
+    # WIPE OUT THERMAL MEMORY if aura is gone (meaning survivor was found)
+    updated_t_mem = []
+    for tx, ty in t_mem:
+        cursor.execute("SELECT thermal_aura FROM cells WHERE x=? AND y=?", (tx, ty))
+        aura_row = cursor.fetchone()
+        if aura_row and aura_row[0] == 1:
+            updated_t_mem.append([tx, ty])
+    
+    cursor.execute("UPDATE drones SET thermal_memory=? WHERE id=?", (json.dumps(updated_t_mem), drone_id))
+    conn.commit()
+    conn.close()
+    
+    print(f"⏱️ [Timing] MCP thermal_scan took {time.time()-t0:.4f}s", file=sys.stderr)
+    msg = f"Revealed {revealed} cells."
+    if new_auras: msg += f" Thermal auras detected nearby! Survivors are in adjacent cells."
+    return msg
 
 @mcp.tool()
-def get_mission_data() -> dict:
-    """Returns global mission status and survivor counts."""
-    try:
-        r = requests.get(f"{BASE_URL}/mission_data")
-        return r.json() if r.status_code == 200 else {"mission_status": "error"}
-    except: return {"mission_status": "error"}
+def get_global_mission_state() -> dict:
+    """Returns a compact summary of unrevealed cells and all drone statuses."""
+    t0 = time.time()
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    
+    # Get all unrevealed cells
+    cursor.execute("SELECT x, y, terrain_type, assigned_to FROM cells WHERE revealed = 0")
+    unrevealed = []
+    for r in cursor.fetchall():
+        unrevealed.append({"pos": [r[0], r[1]], "type": r[2], "assigned_to": r[3]})
+        
+    # Get all drones
+    cursor.execute("SELECT id, x, y, battery, status, assigned_sector FROM drones")
+    drones = []
+    for r in cursor.fetchall():
+        sector_raw = json.loads(r[5]) if r[5] else []
+        sector = sector_raw if sector_raw is not None else []
+        drones.append({
+            "id": r[0], "pos": {"x": r[1], "y": r[2]}, "battery": r[3], 
+            "status": r[4], "assigned_cells_count": len(sector)
+        })
+        
+    conn.close()
+    print(f"⏱️ [Timing] MCP get_global_mission_state took {time.time()-t0:.4f}s", file=sys.stderr)
+    return {"unrevealed_cells": unrevealed, "drones": drones}
+
+@mcp.tool()
+def allocate_drone_sector(drone_id: str, coordinates: list) -> str:
+    """Allocates a specific list of [x,y] coordinates to a drone and marks them as assigned."""
+    t0 = time.time()
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    
+    # 1. Update the cells table
+    for x, y in coordinates:
+        cursor.execute("UPDATE cells SET assigned_to = ? WHERE x = ? AND y = ?", (drone_id, x, y))
+        
+    # 2. Update the drones table
+    cursor.execute("UPDATE drones SET assigned_sector = ?, status = 'SEARCHING' WHERE id = ?", (json.dumps(coordinates), drone_id))
+    
+    conn.commit()
+    conn.close()
+    print(f"⏱️ [Timing] MCP allocate_drone_sector took {time.time()-t0:.4f}s", file=sys.stderr)
+    return f"Successfully allocated {len(coordinates)} cells to {drone_id}."
+
+@mcp.tool()
+def get_next_sector_step(drone_id: str) -> dict:
+    """Returns the closest unrevealed coordinate from the drone's assigned cell list."""
+    t0 = time.time()
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y, assigned_sector FROM drones WHERE id=?", (drone_id,))
+    row = cursor.fetchone()
+    if not row or not row[2]:
+        conn.close()
+        return {"error": "no sector assigned"}
+    
+    cx, cy = row[0], row[1]
+    sector_raw = json.loads(row[2]) if row[2] else []
+    assigned_cells = sector_raw if sector_raw is not None else []
+    
+    # Filter for cells that are still unrevealed
+    unrevealed_in_sector = []
+    for tx, ty in assigned_cells:
+        cursor.execute("SELECT revealed FROM cells WHERE x=? AND y=?", (tx, ty))
+        c_row = cursor.fetchone()
+        if c_row and c_row[0] == 0:
+            unrevealed_in_sector.append((tx, ty))
+            
+    conn.close()
+    
+    if not unrevealed_in_sector:
+        # No more work in this assignment.
+        conn = db.get_db_conn()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE drones SET assigned_sector=NULL WHERE id=?", (drone_id,))
+        conn.commit()
+        conn.close()
+        print(f"⏱️ [Timing] MCP get_next_sector_step took {time.time()-t0:.4f}s", file=sys.stderr)
+        return {"status": "sector_complete"}
+        
+    # Find the closest unrevealed cell in the set
+    closest = min(unrevealed_in_sector, key=lambda c: abs(c[0] - cx) + abs(c[1] - cy))
+    print(f"⏱️ [Timing] MCP get_next_sector_step took {time.time()-t0:.4f}s", file=sys.stderr)
+    return {"x": closest[0], "y": closest[1]}
+
+@mcp.tool()
+def check_task_viability(drone_id: str, target_x: int, target_y: int) -> dict:
+    """Calculates A* distance to target and back to base."""
+    t0 = time.time()
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y, battery FROM drones WHERE id=?", (drone_id,))
+    d_row = cursor.fetchone()
+    if not d_row: return {"error": "not found"}
+    start = (d_row[0], d_row[1])
+    battery = d_row[2]
+    
+    cursor.execute("SELECT x, y FROM cells WHERE is_obstacle=1 AND obstacle_discovered=1")
+    obs = set(cursor.fetchall())
+    conn.close()
+
+    def get_dist(a, b):
+        frontier = [(0, a)]
+        came_from = {a: None}; cost = {a: 0}
+        while frontier:
+            current = heapq.heappop(frontier)[1]
+            if current == b: break
+            for dx, dy in [(0,1),(0,-1),(1,0),(-1,0)]:
+                nxt = (current[0]+dx, current[1]+dy)
+                if 0<=nxt[0]<20 and 0<=nxt[1]<20 and nxt not in obs:
+                    new_c = cost[current] + 1
+                    if nxt not in cost or new_c < cost[nxt]:
+                        cost[nxt] = new_c
+                        priority = new_c + abs(b[0]-nxt[0]) + abs(b[1]-nxt[1])
+                        heapq.heappush(frontier, (priority, nxt))
+                        came_from[nxt] = current
+        return cost.get(b, abs(a[0]-b[0]) + abs(a[1]-b[1])) # Fallback to Manhattan if blocked/unknown
+
+    d1 = get_dist(start, (target_x, target_y))
+    d2 = get_dist((target_x, target_y), (9, 9))
+    required = (d1 + d2) * 2 + 10
+    print(f"⏱️ [Timing] MCP check_task_viability took {time.time()-t0:.4f}s", file=sys.stderr)
+    return {"viable": battery >= required, "required": required, "current": battery}
+
+@mcp.tool()
+def get_navigation_step(drone_id: str, target_x: int, target_y: int) -> dict:
+    """Calculates one A* step towards target avoiding known obstacles."""
+    t0 = time.time()
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y FROM drones WHERE id=?", (drone_id,))
+    start = cursor.fetchone()
+    cursor.execute("SELECT x, y FROM cells WHERE is_obstacle=1 AND obstacle_discovered=1")
+    obs = set(cursor.fetchall())
+    conn.close()
+    
+    goal = (target_x, target_y)
+    if start == goal: 
+        print(f"⏱️ [Timing] MCP get_navigation_step took {time.time()-t0:.4f}s", file=sys.stderr)
+        return {"x": start[0], "y": start[1]}
+    
+    frontier = [(0, start)]
+    came_from = {start: None}; cost = {start: 0}
+    while frontier:
+        current = heapq.heappop(frontier)[1]
+        if current == goal: break
+        for dx, dy in [(0,1),(0,-1),(1,0),(-1,0)]:
+            nxt = (current[0]+dx, current[1]+dy)
+            if 0<=nxt[0]<20 and 0<=nxt[1]<20 and nxt not in obs:
+                new_c = cost[current] + 1
+                if nxt not in cost or new_c < cost[nxt]:
+                    cost[nxt] = new_c
+                    heapq.heappush(frontier, (new_c + abs(goal[0]-nxt[0]) + abs(goal[1]-nxt[1]), nxt))
+                    came_from[nxt] = current
+    
+    if goal not in came_from: 
+        print(f"⏱️ [Timing] MCP get_navigation_step took {time.time()-t0:.4f}s", file=sys.stderr)
+        return {"x": start[0], "y": start[1]}
+    path = []
+    curr = goal
+    while curr != start:
+        path.append(curr)
+        curr = came_from[curr]
+    print(f"⏱️ [Timing] MCP get_navigation_step took {time.time()-t0:.4f}s", file=sys.stderr)
+    return {"x": path[-1][0], "y": path[-1][1]}
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--transport", default=os.getenv("MCP_TRANSPORT", "stdio"))
-    parser.add_argument("--host", default=os.getenv("MCP_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.getenv("MCP_PORT", "9001")))
-    args = parser.parse_args()
-    mcp.run(transport=args.transport, host=args.host, port=args.port)
+    mcp.run()
