@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { WS_URL, GRID_SIZE } from '../constants';
-import { DroneStatus, GridCell } from '../types';
+import { DroneStatus, GridCell, LogEntry } from '../types';
 import { buildGridFromMapData } from '../utils/map-utils';
 
 interface WebSocketHookProps {
@@ -12,7 +12,7 @@ interface WebSocketHookProps {
   setSurvivorsFound: (val: number) => void;
   setSurvivorsDetected: (val: number) => void;
   setRevealedCells: (val: number) => void;
-  addLog: (agent: string, message: string, type?: 'info' | 'warning' | 'success' | 'error') => void;
+  addLog: (agent: string, message: string, type?: LogEntry['type'], details?: LogEntry['details']) => void;
   discoveredRef: React.MutableRefObject<Set<string>>;
   seenLogsRef: React.MutableRefObject<Set<string>>;
 }
@@ -77,6 +77,29 @@ export const useWebSocket = ({
           return;
         }
 
+        if (msg.type === 'agent_reasoning_completed') {
+          const payload = msg.payload ?? {};
+          addLog(payload.agent_role || 'AGENT', `Created a plan:`, 'info', {
+            type: 'reasoning',
+            plan: payload.plan,
+            task_id: payload.task_id,
+            ready: payload.ready
+          });
+          return;
+        }
+
+        if (msg.type === 'mcp_tool_execution_completed') {
+          const payload = msg.payload ?? {};
+          addLog('SYSTEM', `Tool execution completed: ${payload.tool_name}`, 'success', {
+            type: 'tool_execution',
+            tool_name: payload.tool_name,
+            tool_args: payload.tool_args,
+            result: payload.result,
+            execution_duration_ms: payload.execution_duration_ms
+          });
+          return;
+        }
+
         if (msg.type === 'tick_update') {
           const payload = msg.payload ?? {};
           const drone_states = Array.isArray(payload.drones) ? payload.drones : [];
@@ -109,7 +132,7 @@ export const useWebSocket = ({
 
           setGrid((prevGrid) => {
             if (!prevGrid?.length) return prevGrid;
-            const next = prevGrid.map(row => row.map(cell => ({ ...cell, isIlluminated: false, revealed: true })));
+            const next = prevGrid.map(row => row.map(cell => ({ ...cell, isIlluminated: false })));
 
             for (const upd of map_updates) {
               const x = Number(upd.x);
@@ -119,7 +142,12 @@ export const useWebSocket = ({
               cell.altitude = upd.altitude;
               cell.type = upd.is_obstacle ? 'obstacle' : (upd.terrain_type === 'single_story' || upd.terrain_type === 'multiple_story' ? 'building' : 'empty');
               cell.obstacleDiscovered = Boolean(upd.obstacle_discovered);
-              discoveredRef.current.add(`${x},${y}`);
+              cell.thermal_aura = Boolean(upd.thermal_aura);
+              cell.revealed = Boolean(upd.revealed);
+              
+              if (cell.revealed) {
+                discoveredRef.current.add(`${x},${y}`);
+              }
             }
 
             for (const s of survivors) {
@@ -163,9 +191,36 @@ export const useWebSocket = ({
           return;
         }
 
-        if (msg.type === 'agent_log') {
-          const { agent, message, type } = msg.payload ?? {};
-          addLog(agent || 'AGENT', message || '', type || 'info');
+        if (msg.type === 'agent_step') {
+          const { agent, tool, tool_input, log, observation } = msg.payload ?? {};
+          
+          let content = '';
+          
+          if (tool && tool_input && log) {
+             content += `[Action]\n`;
+             content += `Tool: ${tool}\n`;
+             content += `Tool Input: ${typeof tool_input === 'object' ? JSON.stringify(tool_input, null, 2) : tool_input}\n`;
+             content += `Log: ${log}\n`;
+          } else if (log) {
+             content += `[Action]\n${log}\n`;
+          }
+
+          if (observation) {
+            content += `\n[Observation]\n`;
+            if (typeof observation === 'string') {
+              const obsLines = observation.split('\n');
+              obsLines.forEach((line: string) => {
+                if (line.startsWith('Title: ')) content += `Title: ${line.slice(7)}\n`;
+                else if (line.startsWith('Link: ')) content += `Link: ${line.slice(6)}\n`;
+                else if (line.startsWith('Snippet: ')) content += `Snippet: ${line.slice(9)}\n`;
+                else content += `${line}\n`;
+              });
+            } else {
+              content += `${observation}\n`;
+            }
+          }
+          
+          addLog(agent || 'AGENT', content.trim(), 'info');
           return;
         }
 

@@ -12,8 +12,8 @@ load_dotenv()
 class DroneIntent(BaseModel):
     drone_id: str = Field(..., description="The ID of the drone")
     action: str = Field(..., description="The action: 'move', 'wait', or 'scan'")
-    x: int = Field(None, description="Target X coordinate for move")
-    y: int = Field(None, description="Target Y coordinate for move")
+    x: int | None = Field(None, description="Target X coordinate for move")
+    y: int | None = Field(None, description="Target Y coordinate for move")
     status: str = Field(..., description="The new status of the drone (SEARCHING, IDLE, RETURNING, CHARGING)")
 
 class RescueCrew:
@@ -39,30 +39,62 @@ class RescueCrew:
             args=[mcp_path]
         )
 
-        # Store the agent config for per-task instantiation
+        # AGENT POOL: Reuse agents to avoid instantiation overhead
+        self.agents_pool = {}
         self.drone_agent_config = self.agents_config['search_and_rescue_drone']
-            
-    def build_task(self, task_name: str, d_id: str, is_async: bool = True) -> Task:
-        """Hydrates a task configuration into a CrewAI Task."""
-        task_config = self.tasks_config[task_name].copy()
-        desc = task_config['description'].format(drone_id=d_id)
+        self.dispatcher_config = self.agents_config['swarm_dispatcher']
+
+    def _get_or_create_agent(self, agent_id: str, is_dispatcher: bool = False) -> Agent:
+        """Retrieves an existing agent from the pool or creates a new one."""
+        if agent_id in self.agents_pool:
+            return self.agents_pool[agent_id]
+
+        config = self.dispatcher_config if is_dispatcher else self.drone_agent_config
         
-        # Instantiate a unique agent for this task
+        # Include agent_id in role for identification in hooks
+        role = config['role']
+        if not is_dispatcher:
+            role = f"{role} ({agent_id})"
+
         agent = Agent(
-            role=self.drone_agent_config['role'],
-            goal=self.drone_agent_config['goal'],
-            backstory=self.drone_agent_config['backstory'],
+            role=role,
+            goal=config['goal'],
+            backstory=config['backstory'],
             mcps=[self.rescue_mcp_server],
             llm=self.llm,
             verbose=True,
+            reasoning=True,
+            max_retry_limit=3,
             allow_delegation=False
         )
+        
+        self.agents_pool[agent_id] = agent
+        return agent
+            
+    def build_dispatch_task(self) -> Task:
+        """Hydrates the dispatch task with the pooled swarm_dispatcher agent."""
+        task_config = self.tasks_config["dispatch_task"].copy()
+        agent = self._get_or_create_agent("swarm_dispatcher", is_dispatcher=True)
+        
+        return Task(
+            description=task_config['description'],
+            expected_output=task_config['expected_output'],
+            agent=agent,
+            async_execution=False
+        )
+            
+    def build_task(self, task_name: str, d_id: str, is_async: bool = True) -> Task:
+        """Hydrates a task configuration into a CrewAI Task using a pooled agent."""
+        task_config = self.tasks_config[task_name].copy()
+        desc = task_config['description'].format(drone_id=d_id)
+        
+        agent = self._get_or_create_agent(d_id)
         
         return Task(
             description=desc,
             expected_output=task_config['expected_output'],
             agent=agent,
-            async_execution=is_async, # Configurable for anchor pattern
+            async_execution=is_async,
             output_pydantic=DroneIntent
         )
         

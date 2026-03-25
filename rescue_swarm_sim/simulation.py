@@ -1,25 +1,11 @@
 from mesa import Agent, Model
 from mesa.space import MultiGrid
 from mesa.time import RandomActivation
-import sqlite3
 import json
-import os
+import sys
+import db
 
 DB_PATH = "live_state.db"
-
-def init_db():
-    if os.path.exists(DB_PATH):
-        try: os.remove(DB_PATH)
-        except: pass
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("CREATE TABLE drones (id TEXT PRIMARY KEY, x INTEGER, y INTEGER, battery INTEGER, status TEXT, is_destroyed INTEGER, thermal_memory TEXT, priority_list TEXT)")
-    cursor.execute("CREATE TABLE cells (x INTEGER, y INTEGER, altitude REAL, building_height REAL, is_obstacle INTEGER, obstacle_discovered INTEGER, terrain_type TEXT, thermal_aura INTEGER, PRIMARY KEY(x,y))")
-    cursor.execute("CREATE TABLE survivors (id TEXT PRIMARY KEY, x INTEGER, y INTEGER, found INTEGER)")
-    cursor.execute("CREATE TABLE mission_state (id INTEGER PRIMARY KEY, tick_count INTEGER, complete INTEGER, failed INTEGER, total_survivors INTEGER, found_survivors INTEGER)")
-    cursor.execute("INSERT INTO mission_state (id, tick_count, complete, failed, total_survivors, found_survivors) VALUES (1, 0, 0, 0, 0, 0)")
-    conn.commit()
-    conn.close()
 
 class CellAgent(Agent):
     def __init__(self, unique_id, model, altitude, b_height, is_ob, t_type, is_thermal_aura = False):
@@ -30,6 +16,8 @@ class CellAgent(Agent):
         self.terrain_type = t_type
         self.obstacle_discovered = False
         self.thermal_aura = is_thermal_aura
+        self.revealed = False
+        self.assigned_to = None
 
 class SurvivorAgent(Agent):
     def __init__(self, unique_id, model):
@@ -40,8 +28,8 @@ class DroneAgent(Agent):
     def __init__(self, unique_id, model, battery):
         super().__init__(unique_id, model)
         self.battery = battery
-        self.status = "SEARCHING"
-        self.priority_searching_list = []
+        self.status = "IDLE"
+        self.assigned_sector = None
         self.thermal_memory = []
         self.is_destroyed = False
 
@@ -63,7 +51,7 @@ class DroneAgent(Agent):
 class DisasterZoneModel(Model):
     def __init__(self, config=None):
         super().__init__()
-        init_db()
+        db.init_db()
         self.width = 20
         self.height = 20
         self.tick_count = 0
@@ -71,6 +59,7 @@ class DisasterZoneModel(Model):
         self.mission_failed = False
         self.global_discovered_cells = set()
         self.mission_logs = []
+        self.step_logs = []
         self.total_survivors = 0
         self.found_survivors = 0
         
@@ -83,6 +72,7 @@ class DisasterZoneModel(Model):
 
         for c in cells:
             cell = CellAgent(f"c_{c['x']}_{c['y']}", self, c['altitude'], c.get('building_height', 0), c['is_obstacle'], c['terrain_type'])
+            if c['x'] == 9 and c['y'] == 9: cell.revealed = True
             self.grid.place_agent(cell, (c['x'], c['y']))
 
         for i in range(config.get("num_drones", 3)):
@@ -92,6 +82,7 @@ class DisasterZoneModel(Model):
 
         for s in survivors:
             x, y = s.get("x", 0), s.get("y", 0)
+            if x == 9 and y == 9: continue # FAIL-SAFE: No survivors at the base
             survivor = SurvivorAgent(f"s_{self.total_survivors}", self)
             self.grid.place_agent(survivor, (x, y))
             self.total_survivors += 1
@@ -104,46 +95,63 @@ class DisasterZoneModel(Model):
         self.sync_to_db()
 
     def sync_to_db(self):
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        # Sync Drones
+        import time
+        t0 = time.time()
+        
+        drone_data = []
         for a in self.schedule.agents:
             if isinstance(a, DroneAgent):
-                cursor.execute("INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?)", 
-                    (a.unique_id, a.pos[0], a.pos[1], a.battery, a.status, int(a.is_destroyed), json.dumps(a.thermal_memory), json.dumps(a.priority_searching_list)))
-        # Sync Cells (Selective update for discovery)
+                drone_data.append((a.unique_id, a.pos[0], a.pos[1], a.battery, a.status, int(a.is_destroyed), json.dumps(a.thermal_memory), json.dumps(a.assigned_sector)))
+                
+        cell_data = []
+        survivor_data = []
         for contents, (x, y) in self.grid.coord_iter():
             for obj in contents:
                 if isinstance(obj, CellAgent):
-                    cursor.execute("INSERT OR REPLACE INTO cells VALUES (?,?,?,?,?,?,?,?)",
-                        (x, y, obj.altitude, obj.building_height, int(obj.is_obstacle), int(obj.obstacle_discovered), obj.terrain_type, int(obj.thermal_aura)))
-        # Sync Survivors
-        for contents, (x, y) in self.grid.coord_iter():
-            for obj in contents:
-                if isinstance(obj, SurvivorAgent):
-                    cursor.execute("INSERT OR REPLACE INTO survivors VALUES (?,?,?,?)", (obj.unique_id, x, y, int(obj.found)))
-        # Sync Mission State
-        cursor.execute("UPDATE mission_state SET tick_count=?, complete=?, failed=?, total_survivors=?, found_survivors=? WHERE id=1",
-            (self.tick_count, int(self.mission_complete), int(self.mission_failed), self.total_survivors, self.found_survivors))
-        conn.commit()
-        conn.close()
+                    cell_data.append((x, y, obj.altitude, obj.building_height, int(obj.is_obstacle), int(obj.obstacle_discovered), obj.terrain_type, int(obj.thermal_aura), int(obj.revealed), obj.assigned_to))
+                elif isinstance(obj, SurvivorAgent):
+                    survivor_data.append((obj.unique_id, x, y, int(obj.found)))
+                    
+        mission_data = (self.tick_count, int(self.mission_complete), int(self.mission_failed), self.total_survivors, self.found_survivors)
+        
+        db.sync_world_state(drone_data, cell_data, survivor_data, mission_data)
+        
+        t1 = time.time()
+        print(f"⏱️ [Timing] DB Sync (Batch of {len(cell_data)} cells) took {t1 - t0:.4f}s", file=sys.stderr)
 
     def log_action(self, d_id, msg):
         self.mission_logs.append({"drone_id": d_id, "message": msg, "tick": self.tick_count})
+
+    def update_thermal_auras(self):
+        """Recalculates thermal auras based on unfound survivors."""
+        # Reset all cells
+        for contents, (x, y) in self.grid.coord_iter():
+            for obj in contents:
+                if isinstance(obj, CellAgent): obj.thermal_aura = False
+        
+        # Re-apply auras for unfound survivors
+        for contents, (x, y) in self.grid.coord_iter():
+            for obj in contents:
+                if isinstance(obj, SurvivorAgent) and not obj.found:
+                    for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
+                        nx, ny = x+dx, y+dy
+                        if 0 <= nx < 20 and 0 <= ny < 20:
+                            for c_obj in self.grid.get_cell_list_contents([(nx, ny)]):
+                                if isinstance(c_obj, CellAgent): c_obj.thermal_aura = True
 
     def step(self, batch_intents=None):
         if self.mission_complete or self.mission_failed: return
         self.tick_count += 1
         
-        # Apply intents from database (The MCP tools write back to lists, we must read them)
-        conn = sqlite3.connect(DB_PATH)
+        # Apply intents from database
+        conn = db.get_db_conn()
         cursor = conn.cursor()
         for a in self.schedule.agents:
             if isinstance(a, DroneAgent):
-                cursor.execute("SELECT priority_list, thermal_memory FROM drones WHERE id=?", (a.unique_id,))
+                cursor.execute("SELECT assigned_sector, thermal_memory FROM drones WHERE id=?", (a.unique_id,))
                 row = cursor.fetchone()
                 if row:
-                    a.priority_searching_list = json.loads(row[0])
+                    a.assigned_sector = json.loads(row[0]) if row[0] else None
                     a.thermal_memory = json.loads(row[1])
         conn.close()
 
@@ -152,26 +160,70 @@ class DisasterZoneModel(Model):
                 drone = next((a for a in self.schedule.agents if a.unique_id == d_id), None)
                 if not drone or drone.is_destroyed: continue
                 drone.status = intent.get("status", drone.status)
-                if intent.get("action") == "move":
-                    tx, ty = intent.get("x"), intent.get("y")
+                
+                action = intent.get("action")
+                tx, ty = intent.get("x", drone.pos[0]), intent.get("y", drone.pos[1])
+
+                self.step_logs.append({
+                    "step": self.tick_count,
+                    "drone_id": d_id,
+                    "coordinate": drone.pos,
+                    "status": drone.status,
+                    "assigned_sector": drone.assigned_sector,
+                    "target_cell": (tx, ty)
+                })
+
+                if action == "move":
                     crash = any(isinstance(o, CellAgent) and o.is_obstacle for o in self.grid.get_cell_list_contents([(tx, ty)]))
                     if crash:
                         drone.status = "CRASHED"; drone.is_destroyed = True
                         self.log_action(d_id, "Fatal crash!")
                     else:
                         drone.move((tx, ty))
-                        for o in self.grid.get_cell_list_contents([(tx, ty)]):
-                            if isinstance(o, SurvivorAgent) and not o.found:
-                                o.found = True; self.found_survivors += 1
-                                self.log_action(d_id, "Survivor found!")
+
+                # Reveal current and adjacent cells for MOVE or SCAN
+                if action in ["move", "scan"]:
+                    adj = [(tx, ty), (tx+1, ty), (tx-1, ty), (tx, ty+1), (tx, ty-1)]
+                    for ax, ay in adj:
+                        if 0 <= ax < 20 and 0 <= ay < 20:
+                            survivor_found_nearby = False
+                            for o in self.grid.get_cell_list_contents([(ax, ay)]):
+                                if isinstance(o, CellAgent): 
+                                    o.revealed = True
+                                    o.assigned_to = None # Clear assignment when revealed
+                                    if o.is_obstacle: o.obstacle_discovered = True
+                                if isinstance(o, SurvivorAgent) and not o.found:
+                                    o.found = True; self.found_survivors += 1
+                                    self.log_action(d_id, f"Survivor found at ({ax}, {ay})!")
+                                    survivor_found_nearby = True
+                            if survivor_found_nearby:
+                                self.update_thermal_auras()
 
         self.schedule.step()
         
         destroyed = next((d for d in self.schedule.agents if getattr(d, "is_destroyed", False)), None)
-        if destroyed: self.mission_failed = True
-        if self.total_survivors > 0 and self.found_survivors >= self.total_survivors: self.mission_complete = True
+        if destroyed: 
+            self.mission_failed = True
+            print("Mission Failed: Drone Destroyed!")
+        elif self.total_survivors > 0 and self.found_survivors >= self.total_survivors: 
+            self.mission_complete = True
+            print("Mission Complete: All Survivors Found!")
         
         self.sync_to_db()
+
+        if self.mission_complete or self.mission_failed:
+            print("Generating log files")
+            self.generate_log_file()
+
+    def generate_log_file(self):
+        try:
+            with open("log_file.txt", "w") as f:
+                f.write("Mission Log\n")
+                f.write("="*50 + "\n")
+                for log in self.step_logs:
+                    f.write(f"Step: {log['step']} | Drone: {log['drone_id']} | Coord: {log['coordinate']} | Status: {log['status']} | Sector: {log['assigned_sector']} | Target: {log['target_cell']}\n")
+        except Exception as e:
+            print(f"Failed to write log file: {e}")
 
 sim_world = None
 def initialize_world(config=None):

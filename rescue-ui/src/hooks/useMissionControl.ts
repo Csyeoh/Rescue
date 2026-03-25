@@ -46,13 +46,14 @@ export const useMissionControl = () => {
   const discoveredRef = useRef<Set<string>>(new Set());
   const seenLogsRef = useRef<Set<string>>(new Set());
 
-  const addLog = useCallback((agent: string, message: string, type: LogEntry['type'] = 'info') => {
+  const addLog = useCallback((agent: string, message: string, type: LogEntry['type'] = 'info', details?: LogEntry['details']) => {
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date().toLocaleTimeString(),
       agent,
       message,
       type,
+      details,
     };
     setLogs(prev => [...prev, newLog]);
   }, []);
@@ -135,7 +136,8 @@ export const useMissionControl = () => {
   const generateRandomMap = useCallback(async () => {
     const scenarios = ['downtown', 'suburban', 'industrial', 'coastal', 'mixed urban', 'mountain outpost'];
     const randomScenario = scenarios[Math.floor(Math.random() * scenarios.length)];
-    const randomSurvivors = Math.floor(Math.random() * 10) + 5; // 5-15
+    const randomSurvivors = Math.floor(Math.random() * 16) + 5; // 5-20
+    const randomDroneCount = Math.floor(Math.random() * 3) + 3; // 3-5
     const densities: ('low' | 'med' | 'high')[] = ['low', 'med', 'high'];
     const randomObstacleDensity = densities[Math.floor(Math.random() * 3)];
     
@@ -143,6 +145,7 @@ export const useMissionControl = () => {
       ...config,
       scenario: randomScenario,
       survivors: randomSurvivors,
+      droneCount: randomDroneCount,
       obstacleDensity: randomObstacleDensity,
       disasterType: 'default',
     };

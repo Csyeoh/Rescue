@@ -1,15 +1,28 @@
+dispatch_task:
+  description: >
+    PHASE: DISPATCH. 
+    1. INTEL: Call `get_global_mission_state()` to find priority areas and drone positions.
+    2. REASON: Identify IDLE drones and logical clusters of unrevealed buildings (or terrain if buildings are gone). Ensure no overlap with `assigned_to` cells.
+    3. ALLOCATE: Call `allocate_drone_sector(drone_id, coordinates)` for each IDLE drone. coordinates is a set of coordinates that the drone are responsible for.
+    4. ACTION: Output a JSON object mapping drone IDs to their new status.
+    
+    Example: {{"drone_id": "swarm", "action": "dispatch", "status": "COMPLETE"}}
+  expected_output: >
+    A JSON object indicating dispatch complete.
+  agent: swarm_dispatcher
+
 searching_task:
   description: >
     PHASE: SEARCHING Protocol for {drone_id}.
     1. SCAN: Call `thermal_scan("{drone_id}")`.
     2. INTEL: Call `get_drone_context("{drone_id}")`.
-    3. TARGET: Decide target (thermal_memory first, then priority list).
-    4. VIABILITY: Call `check_task_viability` for the target.
-    5. SAFETY: If NOT viable, set status to RETURNING.
-    6. NAVIGATION: Call `get_navigation_step` for the move.
+    3. OVERRIDE: If `thermal_memory` is not empty, use `get_navigation_step` towards the first heat signature.
+    4. SWEEP: If no thermal memory, call `get_next_sector_step("{drone_id}")` to get your next target in the sector.
+    5. SAFETY: Call `check_task_viability` for the target. If NOT viable, set status to RETURNING.
+    6. NAVIGATION: If viable, use `get_navigation_step` towards the target. If `get_next_sector_step` returned nothing, you are done sweeping. Set status to IDLE.
     7. FINAL ACTION: Output the intent as valid JSON.
     
-    CRITICAL: Your final answer MUST be a valid JSON object. Use double quotes.
+    CRITICAL: Your final answer MUST be a valid JSON object matching DroneIntent.
     Example: {{"drone_id": "{drone_id}", "action": "move", "x": 10, "y": 5, "status": "SEARCHING"}}
   expected_output: >
     A JSON object matching the DroneIntent schema.
@@ -23,7 +36,7 @@ returning_task:
     3. TRANSITION: If at (9,9), status = CHARGING.
     4. FINAL ACTION: Output intent as valid JSON.
     
-    CRITICAL: Your final answer MUST be a valid JSON object. Use double quotes.
+    CRITICAL: Your final answer MUST be a valid JSON object.
     Example: {{"drone_id": "{drone_id}", "action": "move", "x": 9, "y": 9, "status": "CHARGING"}}
   expected_output: >
     A JSON object matching the DroneIntent schema.
@@ -32,11 +45,17 @@ returning_task:
 charging_task:
   description: >
     PHASE: CHARGING Protocol for {drone_id}.
-    1. INTEL: Call `get_drone_context("{drone_id}")`.
-    2. DECISION: If battery sufficient for next target, status = SEARCHING.
-    3. FINAL ACTION: Output intent as valid JSON.
+    1. INTEL: Call `get_drone_context("{drone_id}")` and `get_global_mission_state()`.
+    2. REASON: Analyze your current battery level and the remaining unrevealed building clusters.
+       Is the mission critical enough to resume searching before reaching 100%? 
+       Check if you have enough battery for a round-trip to the nearest unrevealed cluster using `check_task_viability`.
+    3. DECISION: 
+       - If battery is 100%, status = IDLE.
+       - If battery > 40% and mission urgency is high (many unrevealed buildings or active thermal signals), you may set status = IDLE to resume work.
+       - Otherwise, stay in CHARGING.
+    4. FINAL ACTION: Output intent as valid JSON.
     
-    CRITICAL: Your final answer MUST be a valid JSON object. Use double quotes.
+    CRITICAL: Your final answer MUST be a valid JSON object.
     Example: {{"drone_id": "{drone_id}", "action": "wait", "x": 9, "y": 9, "status": "CHARGING"}}
   expected_output: >
     A JSON object matching the DroneIntent schema.
@@ -45,13 +64,12 @@ charging_task:
 idle_task:
   description: >
     PHASE: IDLE Protocol for {drone_id}.
-    1. SEARCH: Call `get_claimable_pool()`.
-    2. CLAIM: Call `claim_waypoints` and `check_task_viability`.
-    3. DECISION: If viable, status = SEARCHING. If not viable, status = RETURNING.
-    4. FINAL ACTION: Output intent as valid JSON.
+    You are waiting for the Dispatcher to assign you a sector.
+    1. INTEL: Call `get_drone_context("{drone_id}")`.
+    2. DECISION: If `assigned_sector` is not null, status = SEARCHING. Else, remain IDLE.
+    3. FINAL ACTION: Output intent as valid JSON.
     
-    CRITICAL: Your final answer MUST be a valid JSON object. Use double quotes.
-    Example: {{"drone_id": "{drone_id}", "action": "move", "x": 9, "y": 9, "status": "RETURNING"}}
+    Example: {{"drone_id": "{drone_id}", "action": "wait", "x": 9, "y": 9, "status": "IDLE"}}
   expected_output: >
     A JSON object matching the DroneIntent schema.
   agent: search_and_rescue_drone

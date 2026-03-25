@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Settings, Sliders, Users, Drone, ShieldAlert, Waves, Activity, Droplets, Map as MapIcon, Terminal, RefreshCcw, Download } from 'lucide-react';
+import { Settings, Sliders, Users, Drone, ShieldAlert, Waves, Activity, Droplets, Map as MapIcon, RefreshCcw, Download } from 'lucide-react';
 import { MissionConfig } from '../../types';
 import { ConfigRow } from '../Config/ConfigPage';
 
@@ -92,17 +92,32 @@ export const SidebarConfig: React.FC<SidebarConfigProps> = ({
             </div>
           </div>
 
-          <div className="pt-4 space-y-3 border-t border-azure-pale">
+          <div className="pt-4 space-y-2 border-t border-azure-pale">
             <motion.button
-              whileHover={{ x: 3 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={!isGenerating ? { x: 3 } : {}}
+              whileTap={!isGenerating ? { scale: 0.98 } : {}}
               onClick={onGenerateMap}
               disabled={isGenerating}
-              className={`w-full flex items-center justify-center gap-2 bg-azure-dark text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-azure-dark/10 transition-all ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'hover:bg-azure-dark/90'}`}
+              className={`w-full flex items-center justify-center gap-2 bg-azure-dark text-white py-3 rounded-xl font-bold text-xs shadow-lg shadow-azure-dark/10 transition-all ${isGenerating ? 'opacity-80 cursor-wait' : 'hover:bg-azure-dark/90'}`}
             >
-              <MapIcon size={16} />
-              {isGenerating ? 'Generating...' : 'Generate Random Map'}
+              {isGenerating ? (
+                <>
+                  <RefreshCcw size={14} className="animate-spin" />
+                  <motion.span
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                  >
+                    Generating...
+                  </motion.span>
+                </>
+              ) : (
+                <>
+                  <MapIcon size={14} />
+                  <span>Generate map</span>
+                </>
+              )}
             </motion.button>
+
 
             <motion.button
               whileHover={{ x: 3 }}

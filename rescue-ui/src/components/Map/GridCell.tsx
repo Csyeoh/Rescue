@@ -1,20 +1,20 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { GridCell, EntityType, DisasterType } from '../../types';
+import { GridCell, EntityType, DisasterType, DroneStatus } from '../../types';
 
 interface GridCellProps {
   cell: GridCell;
   mode: 'god' | 'drone';
-  isDroneHere?: boolean;
+  dronesHere?: DroneStatus[];
 }
 
-export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, isDroneHere }) => {
+export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, dronesHere }) => {
   const isRevealed = mode === 'god' || cell.revealed;
   const effectiveType: EntityType =
     mode === 'drone' && cell.type === 'obstacle' && !cell.obstacleDiscovered ? 'empty' : cell.type;
 
   const getBgColor = () => {
-    if (!isRevealed) return '#5a8e94'; // Blended dark teal for unrevealed
+    if (!isRevealed) return '#94a3b8'; // Neutral Slate-400 for unrevealed
     if (effectiveType === 'base') return '#164e63'; // Dark Cyan Base
     if (effectiveType === 'obstacle') return '#000000'; // High contrast black
     if (effectiveType === 'building') {
@@ -63,45 +63,63 @@ export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, isDrone
               <span className="text-white/40 font-bold capitalize">Position</span>
               <span className="font-mono text-azure-pale">{cell.x}, {cell.y}</span>
             </div>
+            {dronesHere && dronesHere.length > 0 && (
+              <div className="flex flex-col gap-1 border-t border-white/5 pt-1">
+                <span className="text-white/40 font-bold capitalize text-[10px]">Active Swarm</span>
+                <div className="flex flex-wrap gap-1 max-w-[120px]">
+                  {dronesHere.map(d => (
+                    <span key={d.id} className="font-mono text-blue-400 text-[9px] bg-blue-400/10 px-1 rounded">
+                      {d.id}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
           {cell.y >= 5 && <div className="w-2 h-2 bg-neutral-dark rotate-45 -mt-1 border-r border-b border-white/10"></div>}
         </div>
       )}
 
 
-      {/* Survivor Indicator */}
-      {isRevealed && ((mode === 'god' && cell.hasSurvivor) || (mode === 'drone' && cell.isRescued)) && (
-        <div className="absolute inset-0 flex items-center justify-center z-20">
+      {/* Agents Layer (Survivors and Drones) */}
+      <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-[1px] p-[1px] z-30 pointer-events-none overflow-hidden">
+        {/* Thermal Aura Indicator (Orange Pulse) */}
+        {isRevealed && cell.thermal_aura && !cell.hasSurvivor && !cell.isRescued && (
+          <motion.div 
+            animate={{ 
+              opacity: [0.3, 0.7, 0.3],
+              scale: [0.8, 1.2, 0.8]
+            }}
+            transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+            className="w-1.5 h-1.5 bg-orange-500/60 rounded-full blur-[1px] shrink-0"
+          />
+        )}
+
+        {/* Survivor Indicator */}
+        {isRevealed && ((mode === 'god' && cell.hasSurvivor) || (mode === 'drone' && cell.isRescued)) && (
           <motion.div 
             animate={{ 
               opacity: [0.6, 1, 0.6], 
               scale: cell.isRescued ? [1, 1.4, 1] : [0.8, 1.2, 0.8] 
             }}
             transition={{ repeat: Infinity, duration: 1.5 }}
-            className={`w-2.5 h-2.5 rounded-full shadow-lg ${
+            className={`w-2 h-2 rounded-full shadow-lg shrink-0 ${
               cell.isRescued 
                 ? 'bg-emerald-500 shadow-emerald-500/50' 
                 : 'bg-alert-yellow shadow-alert-yellow/50'
             }`}
           />
-        </div>
-      )}
+        )}
 
-      {/* Drone Indicator (Bright Blue Dot) */}
-      {isDroneHere && (
-        <div className="absolute inset-0 flex items-center justify-center z-30">
+        {/* Drone Indicator (Bright Blue Dot) - Single dot representing one or more drones */}
+        {dronesHere && dronesHere.length > 0 && (
           <motion.div
             animate={{ scale: [1, 1.4, 1] }}
             transition={{ repeat: Infinity, duration: 0.8 }}
-            className="w-2.5 h-2.5 bg-blue-400 rounded-full shadow-[0_0_12px_#60a5fa]"
+            className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_12px_#60a5fa] shrink-0"
           />
-        </div>
-      )}
-
-      {/* Fog of War Layer (Drone Mode Only) */}
-      {mode === 'drone' && !cell.revealed && (
-        <div className={`absolute inset-0 z-10 bg-azure-dark/80 transition-opacity duration-500 ${cell.isIlluminated ? 'opacity-0' : 'opacity-100'}`} />
-      )}
+        )}
+      </div>
 
       {/* Base Station Highlight */}
       {cell.type === 'base' && (

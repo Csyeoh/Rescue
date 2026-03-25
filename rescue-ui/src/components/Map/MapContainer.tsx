@@ -42,7 +42,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                     key={`q-${x}-${y}`}
                     cell={cell}
                     mode="god"
-                    isDroneHere={drones.some(d => d.x === x && d.y === y)}
+                    dronesHere={drones.filter(d => d.x === x && d.y === y)}
                   />
                 )))}
               </div>
@@ -73,7 +73,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
                     key={`a-${x}-${y}`}
                     cell={cell}
                     mode="drone"
-                    isDroneHere={drones.some(d => d.x === x && d.y === y)}
+                    dronesHere={drones.filter(d => d.x === x && d.y === y)}
                   />
                 )))}
               </div>

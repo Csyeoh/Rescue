@@ -93,6 +93,7 @@ export default function App() {
           >
             <ConfigPage
               config={config}
+              isGenerating={isGenerating}
               onSave={async (newConfig) => {
                 setView('dashboard');
                 addLog('SYSTEM', `New configuration applied: ${newConfig.scenario}, ${newConfig.survivors} survivors.`, 'info');

@@ -20,14 +20,15 @@ export const buildGridFromMapData = (map_data: any): GridCell[][] => {
   for (let y = 0; y < GRID_SIZE; y++) {
     const row: GridCell[] = [];
     for (let x = 0; x < GRID_SIZE; x++) {
-      const type: EntityType = x === BASE_X && y === BASE_Y ? 'base' : 'empty';
+      const isBase = x === BASE_X && y === BASE_Y;
+      const type: EntityType = isBase ? 'base' : 'empty';
       row.push({
         x,
         y,
         type,
         height: type === 'base' ? 9 : 1,
-        revealed: true,
-        isIlluminated: false,
+        revealed: isBase,
+        isIlluminated: isBase,
         isRescued: false,
         hasSurvivor: false,
         obstacleDiscovered: false,
@@ -71,6 +72,9 @@ export const buildGridFromMapData = (map_data: any): GridCell[][] => {
     const x = Number(s.x);
     const y = Number(s.y);
     if (!(x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE)) continue;
+    // FAIL-SAFE: Never render a survivor at the base station (9,9)
+    if (x === BASE_X && y === BASE_Y) continue;
+    
     const cell = newGrid[y][x];
     cell.hasSurvivor = true;
     cell.isRescued = Boolean(s.discovered);

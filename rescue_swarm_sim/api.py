@@ -75,6 +75,8 @@ def reset_simulation():
 def abort_mission():
     if simulation.sim_world:
         simulation.sim_world.mission_complete = True
+        if hasattr(simulation.sim_world, 'generate_log_file'):
+            simulation.sim_world.generate_log_file()
     return {"status": "success", "message": "Aborted."}
 
 @app.websocket("/ws")

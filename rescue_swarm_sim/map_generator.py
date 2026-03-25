@@ -46,7 +46,16 @@ def generate_semantic_blueprint(scenario: str, num_survivors: int) -> MapBluepri
                 temperature=0.3
             ),
         )
-        return MapBlueprint.model_validate_json(response.text)
+        blueprint = MapBlueprint.model_validate_json(response.text)
+        
+        # FAIL-SAFE: Filter out any survivors accidentally placed within 2-cell buffer of base (9,9)
+        filtered_survivors = [
+            s for s in blueprint.survivors 
+            if not (s.x == 9 and s.y == 9)
+        ]
+        blueprint.survivors = filtered_survivors
+        
+        return blueprint
     except Exception as e:
         print(f"AI Generation Failed: {e}")
         return None

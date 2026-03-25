@@ -1,5 +1,3 @@
-After every code modification, append a summary of changes to GEMINI_CHANGELOG.md including the filename and a brief description of the logic altered.
-
 ## Frontend Structure (rescue-ui)
 
 - **Framework:** Next.js 15 (App Router)

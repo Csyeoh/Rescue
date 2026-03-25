@@ -11,6 +11,7 @@ export interface GridCell {
   isRescued?: boolean;
   hasSurvivor?: boolean;
   obstacleDiscovered?: boolean;
+  thermal_aura?: boolean;
   altitude?: number;
   buildingHeight?: number;
 }
@@ -30,6 +31,17 @@ export interface LogEntry {
   agent: string;
   message: string;
   type: 'info' | 'warning' | 'success' | 'error';
+  details?: {
+    type?: 'reasoning' | 'tool_execution';
+    plan?: string;
+    task_id?: string;
+    ready?: boolean;
+    tool_name?: string;
+    tool_args?: Record<string, unknown>;
+    execution_duration_ms?: number;
+    result?: unknown;
+    [key: string]: unknown;
+  };
 }
 
 export interface MissionConfig {
