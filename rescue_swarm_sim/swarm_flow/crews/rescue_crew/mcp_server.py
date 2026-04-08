@@ -5,7 +5,7 @@ import heapq
 import json
 import time
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 import db
 
 mcp = FastMCP("RescueSwarm")
@@ -111,46 +111,90 @@ def get_global_mission_state() -> dict:
 def allocate_drone_sector(drone_id: str, coordinates: list) -> str:
     """Allocates a specific list of [x,y] coordinates to a drone and marks them as assigned."""
     t0 = time.time()
+    
+    clean_coords = []
+    for c in coordinates:
+        try:
+            if isinstance(c, dict):
+                clean_coords.append([int(c["x"]), int(c["y"])])
+            elif isinstance(c, (list, tuple)) and len(c) >= 2:
+                clean_coords.append([int(c[0]), int(c[1])])
+        except (ValueError, TypeError):
+            pass
+
     conn = db.get_db_conn()
     cursor = conn.cursor()
     
     # 1. Update the cells table
-    for x, y in coordinates:
+    for x, y in clean_coords:
         cursor.execute("UPDATE cells SET assigned_to = ? WHERE x = ? AND y = ?", (drone_id, x, y))
         
     # 2. Update the drones table
-    cursor.execute("UPDATE drones SET assigned_sector = ?, status = 'SEARCHING' WHERE id = ?", (json.dumps(coordinates), drone_id))
+    cursor.execute("UPDATE drones SET assigned_sector = ?, status = 'SEARCHING' WHERE id = ?", (json.dumps(clean_coords), drone_id))
     
     conn.commit()
     conn.close()
     print(f"⏱️ [Timing] MCP allocate_drone_sector took {time.time()-t0:.4f}s", file=sys.stderr)
-    return f"Successfully allocated {len(coordinates)} cells to {drone_id}."
+    return f"Successfully allocated {len(clean_coords)} cells to {drone_id}."
 
 @mcp.tool()
 def get_next_sector_step(drone_id: str) -> dict:
     """Returns the closest unrevealed coordinate from the drone's assigned cell list."""
     t0 = time.time()
+    
+    # Initialize basic log state
+    log_state = {
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+        "drone_id": drone_id,
+        "action": "evaluating",
+        "position": None,
+        "assigned_cells_count": 0,
+        "unrevealed_in_sector_count": 0
+    }
+    
+    def write_log(result_obj):
+        log_state["result"] = result_obj
+        try:
+            with open("get_next_sector_step.txt", "a") as f:
+                f.write(json.dumps(log_state) + "\n")
+        except Exception as e:
+            print(f"Error writing to log: {e}", file=sys.stderr)
+        return result_obj
+
     conn = db.get_db_conn()
     cursor = conn.cursor()
     cursor.execute("SELECT x, y, assigned_sector FROM drones WHERE id=?", (drone_id,))
     row = cursor.fetchone()
     if not row or not row[2]:
         conn.close()
-        return {"error": "no sector assigned"}
+        return write_log({"error": "no sector assigned"})
     
     cx, cy = row[0], row[1]
     sector_raw = json.loads(row[2]) if row[2] else []
     assigned_cells = sector_raw if sector_raw is not None else []
     
+    log_state["position"] = [cx, cy]
+    log_state["assigned_cells_count"] = len(assigned_cells)
+    
     # Filter for cells that are still unrevealed
     unrevealed_in_sector = []
-    for tx, ty in assigned_cells:
+    for cell in assigned_cells:
+        try:
+            if isinstance(cell, dict):
+                tx, ty = int(cell["x"]), int(cell["y"])
+            else:
+                tx, ty = int(cell[0]), int(cell[1])
+        except (ValueError, IndexError, TypeError):
+            continue
+            
         cursor.execute("SELECT revealed FROM cells WHERE x=? AND y=?", (tx, ty))
         c_row = cursor.fetchone()
         if c_row and c_row[0] == 0:
             unrevealed_in_sector.append((tx, ty))
             
     conn.close()
+    
+    log_state["unrevealed_in_sector_count"] = len(unrevealed_in_sector)
     
     if not unrevealed_in_sector:
         # No more work in this assignment.
@@ -160,12 +204,12 @@ def get_next_sector_step(drone_id: str) -> dict:
         conn.commit()
         conn.close()
         print(f"⏱️ [Timing] MCP get_next_sector_step took {time.time()-t0:.4f}s", file=sys.stderr)
-        return {"status": "sector_complete"}
+        return write_log({"status": "sector_complete"})
         
     # Find the closest unrevealed cell in the set
     closest = min(unrevealed_in_sector, key=lambda c: abs(c[0] - cx) + abs(c[1] - cy))
     print(f"⏱️ [Timing] MCP get_next_sector_step took {time.time()-t0:.4f}s", file=sys.stderr)
-    return {"x": closest[0], "y": closest[1]}
+    return write_log({"x": closest[0], "y": closest[1]})
 
 @mcp.tool()
 def check_task_viability(drone_id: str, target_x: int, target_y: int) -> dict:

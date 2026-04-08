@@ -2,10 +2,8 @@ fastapi
 uvicorn
 pydantic
 mesa
+google-adk
 google-genai
 python-dotenv
-crewai
-pyyaml
-langchain-google-genai
 fastmcp
 websockets

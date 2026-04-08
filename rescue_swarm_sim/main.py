@@ -21,8 +21,9 @@ def start_services():
         # 2. Start the Next.js Frontend (Live React Map)
         print("--> Starting Next.js Live Map (Port 3000)...")
         npm_cmd = "npm.cmd" if os.name == "nt" else "npm"
-        # Look one directory UP from the current folder, then find rescue-ui
-        ui_path = os.path.join(os.path.dirname(os.getcwd()), "new_rescue_ui")
+        # Look one directory UP from the current script location, then find rescue-ui
+        ui_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rescue-ui")
+
         
         frontend_process = subprocess.Popen(
             [npm_cmd, "run", "dev"],

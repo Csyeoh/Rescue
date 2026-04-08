@@ -1,120 +1,212 @@
 #!/usr/bin/env python
-from typing import List
-from crewai.flow.flow import Flow, listen, start, router
-from pydantic import BaseModel
+from typing import List, Dict, Any
 import sys
 import os
 import time
+import json
+import asyncio
+from google.adk import Runner, Agent
+from google.adk.agents.parallel_agent import ParallelAgent
+from google.adk.events import Event
+from google.adk.sessions import InMemorySessionService
+from google.genai.types import Content, Part
+from dotenv import load_dotenv
+
+load_dotenv()
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import simulation
 import websocket_manager
 from .crews.rescue_crew.rescue_crew import RescueCrew
-from .crews.rescue_crew.reasoning_logger import ReasoningLogger
 
-
-class SwarmMissionState(FlowState):
-    simulation_active: bool = True
-    active_drones: List[str] = []
-    current_intents: dict = {}
-    tick_start_time: float = 0.0
-
-customListener = ReasoningLogger()
-class SwarmCombinedFlow(Flow[SwarmMissionState]):
+class SwarmCombinedFlow:
     def __init__(self):
-        super().__init__(tracing=True)
         self.rescue_crew = RescueCrew()
+        self.simulation_active = True
+        self.current_intents = {}
+        self.tick_start_time = 0.0
+        self.session_service = InMemorySessionService()
 
-    @start()
-    def startFlow(self):
-        pass
-    
-    @router(startFlow)
-    def on_startFlow(self):
+    async def run_agent(self, agent: Agent, user_message: str) -> str:
+        """Helper to run an ADK agent and broadcast its events to the UI."""
+        user_id = "swarm_commander"
+        session_id = "current_mission"
+        app_name = "rescue_swarm"
+
+        try:
+            # Ensure session exists before running
+            session = await self.session_service.get_session(app_name=app_name, user_id=user_id, session_id=session_id)
+            if not session:
+                await self.session_service.create_session(
+                    app_name=app_name,
+                    user_id=user_id,
+                    session_id=session_id
+                )
+            
+            runner = Runner(
+                agent=agent, 
+                app_name=app_name,
+                session_service=self.session_service
+            )
+            final_text = ""
+            
+            # runner.run_async expects a Content object
+            new_message = Content(role="user", parts=[Part(text=user_message)])
+            
+            async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message):
+                # Check for content from the model (text or thoughts)
+                if event.content and event.author != "user" and event.author != "tool":
+                    parts_to_ui = []
+                    for p in event.content.parts:
+                        if hasattr(p, 'text') and p.text:
+                            parts_to_ui.append(p.text)
+                        
+                    if parts_to_ui:
+                        combined_content = "".join(parts_to_ui)
+                        payload = {
+                            "agent_role": agent.description or agent.name,
+                            "task_id": event.id,
+                            "plan": combined_content,
+                            "ready": event.is_final_response()
+                        }
+                        print(f"Sending UI event 'agent_reasoning_completed' with payload: {payload}")
+                        websocket_manager.send_to_ui("agent_reasoning_completed", payload)
+                        if event.is_final_response():
+                            final_text = combined_content
+
+                # Check for Tool Calls
+                calls = event.get_function_calls()
+                if calls:
+                    for call in calls:
+                        payload = {
+                            "tool_name": call.name,
+                            "tool_args": call.args,
+                            "result": "Executing...",
+                            "execution_duration_ms": 0
+                        }
+                        print(f"Sending UI event 'mcp_tool_execution_completed' (call) with payload: {payload}")
+                        websocket_manager.send_to_ui("mcp_tool_execution_completed", payload)
+
+                # Check for Tool Responses
+                responses = event.get_function_responses()
+                if responses:
+                    for resp in responses:
+                        payload = {
+                            "tool_name": resp.name,
+                            "tool_args": {}, 
+                            "result": str(resp.response),
+                            "execution_duration_ms": 0
+                        }
+                        print(f"Sending UI event 'mcp_tool_execution_completed' (response) with payload: {payload}")
+                        websocket_manager.send_to_ui("mcp_tool_execution_completed", payload)
+            
+            return final_text
+        except Exception as e:
+            print(f"Error in run_agent: {e}")
+            websocket_manager.send_to_ui("flow_error", {"message": str(e)})
+            raise e
+
+    async def kickoff(self):
+        print("🚀 [ADK] Starting Swarm Orchestration Loop...")
         websocket_manager.send_to_ui("partitioning_start", {"message": "Initializing Swarm Dispatcher..."})
-        if simulation.sim_world: simulation.sim_world.sync_to_db()
-        return "swarm_loop"
+        
+        if simulation.sim_world: 
+            simulation.sim_world.sync_to_db()
 
-    @listen("swarm_loop")
-    def gather_intents(self):
-        self.state.tick_start_time = time.time()
-        print(f"\n--- Swarm Tick {simulation.sim_world.tick_count if simulation.sim_world else 0} ---")
-        if not simulation.sim_world: return "end_mission"
+        while self.simulation_active:
+            await self.swarm_tick()
+            
+            if not simulation.sim_world: break
+            
+            if simulation.sim_world.mission_complete or getattr(simulation.sim_world, "mission_failed", False):
+                print("Ending Mission: Mission Complete or Failed.")
+                self.simulation_active = False
+                break
+            
+            await asyncio.sleep(0.1)
+        print("Mission Concluded.")
+
+    async def swarm_tick(self):
+        self.tick_start_time = time.time()
+        tick_count = simulation.sim_world.tick_count if simulation.sim_world else 0
+        print(f"\n--- Swarm Tick {tick_count} ---")
+        
+        if not simulation.sim_world: 
+            return
 
         from simulation import DroneAgent
         drones = [a for a in simulation.sim_world.schedule.agents if isinstance(a, DroneAgent) and not getattr(a, 'is_destroyed', False)]
-        if not drones: return "end_mission"
+        if not drones:
+            self.simulation_active = False
+            return
 
-        tasks = []
-        
-        # 1. Add the Dispatcher Task ONLY if there are IDLE drones
+        # 1. Dispatcher Phase: If there are IDLE drones
         has_idle_drones = any(d.status == "IDLE" for d in drones)
         if has_idle_drones:
-            print("Dispatcher: IDLE drones detected. Adding dispatch task...")
-            tasks.append(self.rescue_crew.build_dispatch_task())
+            print("Dispatcher: IDLE drones detected. Running dispatcher agent...")
+            dispatcher = self.rescue_crew.get_dispatcher_agent()
+            await self.run_agent(dispatcher, "Analyze map and allocate sectors to IDLE drones.")
         else:
-            print("Dispatcher: All drones are busy. Skipping dispatch task.")
+            print("Dispatcher: All drones are busy. Skipping dispatcher agent.")
 
-        # 2. Add Batch Drone Task
-        fleet_state_lines = []
-        for drone in drones:
-            fleet_state_lines.append(f"- Drone ID: {drone.unique_id}, Status: {drone.status}")
-        fleet_state_str = "\n".join(fleet_state_lines)
-        
-        tasks.append(self.rescue_crew.build_batch_task(fleet_state_str))
-        
-        # Parallel execution with Sync Anchor
+        # 2. Execution Phase: PARALLEL Drone Execution
+        print(f"Execution: Running {len(drones)} drone agents in PARALLEL...")
         t_crew_start = time.time()
-        crew = self.rescue_crew.crew(tasks)
-        result = crew.kickoff()
+        
+        # Create sub-agents for each drone
+        sub_agents = [self.rescue_crew.get_drone_agent(d.unique_id) for d in drones]
+        
+        # Create ParallelAgent
+        parallel_agent = ParallelAgent(
+            name="swarm_parallel_pilot",
+            description="Executes all drone pilots concurrently.",
+            sub_agents=sub_agents
+        )
+        
+        # Run ParallelAgent
+        # Note: run_agent will broadcast events from all sub-agents to UI
+        await self.run_agent(parallel_agent, "Each pilot: determine your next tactical move.")
+        
         t_crew_end = time.time()
-        print(f"⏱️ [Timing] CrewAI Kickoff (Agent Reasoning + MCP Tools) took {t_crew_end - t_crew_start:.2f}s")
+        print(f"⏱️ [Timing] ADK Parallel Execution took {t_crew_end - t_crew_start:.2f}s")
         
-        # Extract intents from the validated Pydantic models in tasks_output
+        # Extract results from session state
         batch_intents = {}
-        for task_output in result.tasks_output:
-            out_model = getattr(task_output, "pydantic", None)
-            if out_model:
-                if hasattr(out_model, 'intents') and isinstance(out_model.intents, list):
-                    for intent in out_model.intents:
-                        if hasattr(intent, 'drone_id') and getattr(intent, 'drone_id') != "swarm":
-                            batch_intents[intent.drone_id] = intent.model_dump()
-                            print(f"Captured Intent: {intent.drone_id} -> {intent.action} ({intent.status}) -> ({intent.x}, {intent.y})")
+        session = await self.session_service.get_session(app_name="rescue_swarm", user_id="swarm_commander", session_id="current_mission")
         
-        self.state.current_intents = batch_intents
+        for d in drones:
+            output_key = f"intent_{d.unique_id}"
+            intent_data = session.state.get(output_key)
+            if intent_data:
+                try:
+                    # ADK stores schema-validated output as dict or JSON string in state
+                    if isinstance(intent_data, str):
+                        intent = json.loads(intent_data)
+                    else:
+                        intent = intent_data
+                    
+                    batch_intents[d.unique_id] = intent
+                    print(f"Captured Parallel Intent: {d.unique_id} -> {intent['action']} ({intent['status']}) -> ({intent.get('x')}, {intent.get('y')})")
+                except Exception as e:
+                    print(f"[ERROR] Failed to parse parallel intent for {d.unique_id}: {e}")
 
-    @router(gather_intents)
-    def execute_tick(self):
-        if not simulation.sim_world: return "end_mission"
-        
-        # Physics Step
+        # 3. Physics Step
         t_phys_start = time.time()
-        simulation.sim_world.step(self.state.current_intents)
+        simulation.sim_world.step(batch_intents)
         t_phys_end = time.time()
         print(f"⏱️ [Timing] Simulation Physics & DB Sync took {t_phys_end - t_phys_start:.4f}s")
         
-        # UI Update (Immediate Broadcast)
+        # 4. UI Update
         from .tools.state_reader import get_current_map_state
         state = get_current_map_state()
         websocket_manager.send_to_ui("tick_update", state)
         
-        t_total = time.time() - self.state.tick_start_time
+        t_total = time.time() - self.tick_start_time
         print(f"⏱️ [Timing] Total Tick Duration: {t_total:.2f}s\n")
-        
-        if simulation.sim_world.mission_complete or getattr(simulation.sim_world, "mission_failed", False):
-            print("Ending Mission: Mission Complete or Failed.")
-            return "end_mission"
-        return "swarm_loop"
-
-    @listen("end_mission")
-    def conclude(self):
-        print("Mission Concluded.")
-        self.state.simulation_active = False
-        return
 
 def kickoff():
     flow = SwarmCombinedFlow()
-    flow.kickoff()
+    asyncio.run(flow.kickoff())
 
 if __name__ == "__main__":
     kickoff()

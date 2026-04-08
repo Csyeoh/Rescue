@@ -37,7 +37,6 @@ class DroneAgent(Agent):
         if self.is_destroyed: return
         if self.status == "CHARGING":
             self.battery = min(100, self.battery + 2)
-            if self.pos != (9, 9): self.model.grid.move_agent(self, (9, 9))
         if self.battery <= 0 and self.status != "CHARGING":
             self.status = "GROUNDED"
             self.is_destroyed = True
@@ -120,6 +119,7 @@ class DisasterZoneModel(Model):
         print(f"⏱️ [Timing] DB Sync (Batch of {len(cell_data)} cells) took {t1 - t0:.4f}s", file=sys.stderr)
 
     def log_action(self, d_id, msg):
+        print(f"Logging action - Drone: {d_id}, Msg: {msg}, Tick: {self.tick_count}")
         self.mission_logs.append({"drone_id": d_id, "message": msg, "tick": self.tick_count})
 
     def update_thermal_auras(self):
@@ -143,16 +143,28 @@ class DisasterZoneModel(Model):
         if self.mission_complete or self.mission_failed: return
         self.tick_count += 1
         
-        # Apply intents from database
+        # 1. Synchronize in-memory state from DB (Source of Truth for Agent/Dispatcher actions)
         conn = db.get_db_conn()
         cursor = conn.cursor()
+        
+        # Update Drones (including status which was missing before)
+        cursor.execute("SELECT id, status, assigned_sector, thermal_memory FROM drones")
+        drone_rows = {r[0]: r for r in cursor.fetchall()}
         for a in self.schedule.agents:
-            if isinstance(a, DroneAgent):
-                cursor.execute("SELECT assigned_sector, thermal_memory FROM drones WHERE id=?", (a.unique_id,))
-                row = cursor.fetchone()
-                if row:
-                    a.assigned_sector = json.loads(row[0]) if row[0] else None
-                    a.thermal_memory = json.loads(row[1])
+            if isinstance(a, DroneAgent) and a.unique_id in drone_rows:
+                r = drone_rows[a.unique_id]
+                a.status = r[1]
+                a.assigned_sector = json.loads(r[2]) if r[2] else None
+                a.thermal_memory = json.loads(r[3]) if r[3] else []
+        
+        # Update Cells (crucial for preserving revealed status and assignments)
+        cursor.execute("SELECT x, y, revealed, assigned_to, obstacle_discovered FROM cells")
+        for cx, cy, rev, asgn, obs_disc in cursor.fetchall():
+            for obj in self.grid.get_cell_list_contents([(cx, cy)]):
+                if isinstance(obj, CellAgent):
+                    obj.revealed = bool(rev)
+                    obj.assigned_to = asgn
+                    obj.obstacle_discovered = bool(obs_disc)
         conn.close()
 
         if batch_intents:
@@ -173,7 +185,7 @@ class DisasterZoneModel(Model):
                     "target_cell": (tx, ty)
                 })
 
-                if action == "move":
+                if action == "search":
                     crash = any(isinstance(o, CellAgent) and o.is_obstacle for o in self.grid.get_cell_list_contents([(tx, ty)]))
                     if crash:
                         drone.status = "CRASHED"; drone.is_destroyed = True
@@ -182,7 +194,7 @@ class DisasterZoneModel(Model):
                         drone.move((tx, ty))
 
                 # Reveal current and adjacent cells for MOVE or SCAN
-                if action in ["move", "scan"]:
+                if action in ["search", "scan"]:
                     adj = [(tx, ty), (tx+1, ty), (tx-1, ty), (tx, ty+1), (tx, ty-1)]
                     for ax, ay in adj:
                         if 0 <= ax < 20 and 0 <= ay < 20:

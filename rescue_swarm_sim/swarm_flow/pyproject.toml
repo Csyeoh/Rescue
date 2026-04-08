@@ -6,7 +6,8 @@ authors = ["Your Name <you@example.com>"]
 
 [tool.poetry.dependencies]
 python = ">=3.10.0,<3.13"
-crewai = "^0.83.0"
+google-adk = "^0.1.0"
+google-genai = "^1.49.0"
 
 [build-system]
 requires = ["poetry-core"]

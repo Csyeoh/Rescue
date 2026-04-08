@@ -1,8 +1,7 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, APIRouter
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import sqlite3
-import database
+import asyncio
 import simulation
 import websocket_manager
 from typing import Optional, Dict, Any
@@ -61,7 +60,9 @@ def generate_map(config: SimulationConfig):
 
 @app.post("/api/start_mission")
 def start_mission(config: SimulationConfig):
-    simulation.initialize_world(config.model_dump() if hasattr(config, 'model_dump') else config.dict())
+    config_dict = config.model_dump() if hasattr(config, 'model_dump') else config.dict()
+    print(f"Starting mission with config: {config_dict}")
+    simulation.initialize_world(config_dict)
     import threading
     def run_flow():
         from swarm_flow.main import kickoff
@@ -85,7 +86,7 @@ def abort_mission():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
+    await websocket_manager.manager.connect(websocket)
     try:
         await asyncio.sleep(0.1)
         while True:
