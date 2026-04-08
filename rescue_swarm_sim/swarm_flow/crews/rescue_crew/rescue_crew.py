@@ -31,13 +31,23 @@ class RescueCrew:
         
         self.model = "gemini-2.5-flash"
         
-        # Initialize MCP Server
-        mcp_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server.py"))
-        self.mcp_toolset = McpToolset(
+        # Initialize MCP Servers
+        dispatcher_mcp_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server_dispatcher.py"))
+        self.dispatcher_mcp_toolset = McpToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=sys.executable, 
-                    args=[mcp_path]
+                    args=[dispatcher_mcp_path]
+                )
+            )
+        )
+
+        drone_mcp_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server_drone.py"))
+        self.drone_mcp_toolset = McpToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command=sys.executable, 
+                    args=[drone_mcp_path]
                 )
             )
         )
@@ -53,7 +63,7 @@ class RescueCrew:
             description=config['role'],
             instruction=instruction,
             model=self.model,
-            tools=[self.mcp_toolset]
+            tools=[self.dispatcher_mcp_toolset]
         )
         return agent
 
@@ -92,7 +102,7 @@ class RescueCrew:
             description=f"Pilot for {drone_id}",
             instruction=instruction,
             model=self.model,
-            tools=[self.mcp_toolset],
+            tools=[self.drone_mcp_toolset],
             output_schema=DroneIntent,
             output_key=f"intent_{drone_id}", # Unique key for ParallelAgent collection
             disallow_transfer_to_parent=True,
