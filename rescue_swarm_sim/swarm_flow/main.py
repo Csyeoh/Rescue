@@ -42,17 +42,17 @@ class SwarmCombinedFlow:
                     user_id=user_id,
                     session_id=session_id
                 )
-            
+
             runner = Runner(
                 agent=agent, 
                 app_name=app_name,
                 session_service=self.session_service
             )
             final_text = ""
-            
+
             # runner.run_async expects a Content object
             new_message = Content(role="user", parts=[Part(text=user_message)])
-            
+
             async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=new_message):
                 # Check for content from the model (text or thoughts)
                 if event.content and event.author != "user" and event.author != "tool":
@@ -60,7 +60,7 @@ class SwarmCombinedFlow:
                     for p in event.content.parts:
                         if hasattr(p, 'text') and p.text:
                             parts_to_ui.append(p.text)
-                        
+
                     if parts_to_ui:
                         combined_content = "".join(parts_to_ui)
                         payload = {
@@ -99,13 +99,23 @@ class SwarmCombinedFlow:
                         }
                         print(f"Sending UI event 'mcp_tool_execution_completed' (response) with payload: {payload}")
                         websocket_manager.send_to_ui("mcp_tool_execution_completed", payload)
-            
-            return final_text
-        except Exception as e:
-            print(f"Error in run_agent: {e}")
-            websocket_manager.send_to_ui("flow_error", {"message": str(e)})
-            raise e
 
+            await runner.close()
+
+            return final_text
+        except (Exception, BaseExceptionGroup) as e:
+            # Enhanced error logging for TaskGroups and ExceptionGroups
+            error_msg = str(e)
+            if hasattr(e, 'exceptions'):
+                # It's an ExceptionGroup or BaseExceptionGroup
+                sub_errors = []
+                for sub_e in e.exceptions:
+                    sub_errors.append(f"[{type(sub_e).__name__}] {str(sub_e)}")
+                error_msg = f"{type(e).__name__}: {str(e)} (Sub-exceptions: {', '.join(sub_errors)})"
+
+            print(f"Error in run_agent: {error_msg}")
+            websocket_manager.send_to_ui("flow_error", {"message": error_msg})
+            raise e
     async def kickoff(self):
         print("🚀 [ADK] Starting Swarm Orchestration Loop...")
         websocket_manager.send_to_ui("partitioning_start", {"message": "Initializing Swarm Dispatcher..."})

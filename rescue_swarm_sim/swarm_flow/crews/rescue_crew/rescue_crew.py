@@ -38,7 +38,8 @@ class RescueCrew:
                 server_params=StdioServerParameters(
                     command=sys.executable, 
                     args=[dispatcher_mcp_path]
-                )
+                ),
+                timeout=60.0
             )
         )
 
@@ -48,7 +49,8 @@ class RescueCrew:
                 server_params=StdioServerParameters(
                     command=sys.executable, 
                     args=[drone_mcp_path]
-                )
+                ),
+                timeout=60.0
             )
         )
 

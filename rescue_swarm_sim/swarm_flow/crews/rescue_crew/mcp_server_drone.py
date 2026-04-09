@@ -4,6 +4,8 @@ import os
 import heapq
 import json
 import time
+import io
+
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 import db
