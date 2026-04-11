@@ -21,8 +21,6 @@ def get_current_map_state() -> dict:
             if isinstance(obj, CellAgent):
                 terrain.append({
                     "x": x, "y": y,
-                    "altitude": obj.altitude,
-                    "building_height": obj.building_height,
                     "is_obstacle": obj.is_obstacle,
                     "terrain_type": obj.terrain_type,
                     "obstacle_discovered": obj.obstacle_discovered,

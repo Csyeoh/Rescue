@@ -1,35 +1,50 @@
-from fastmcp import FastMCP
 import sys
 import os
+
+# Add the project root to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+
+from fastmcp import FastMCP
 import heapq
 import json
 import time
 import io
-
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+from swarm_flow.tools.ascii_map import generate_local_map
 import db
 
 mcp = FastMCP("DroneSwarm")
 
 @mcp.tool()
 def get_drone_context(drone_id: str) -> dict:
-    """Returns battery, position, status, assigned sector, and thermal memory for a drone."""
+    """Returns local ASCII map, position, battery, thermal memory, and sector status."""
     t0 = time.time()
     conn = db.get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT x, y, battery, status, is_destroyed, thermal_memory, assigned_sector FROM drones WHERE id=?", (drone_id,))
+    cursor.execute("SELECT x, y, battery, status, is_destroyed, thermal_memory, assigned_cells FROM drones WHERE id=?", (drone_id,))
     row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return {"error": "not found"}
+    
+    x, y, batt, status, destroyed, t_mem_raw, pts_raw = row
+    pts = json.loads(pts_raw) if pts_raw else []
+    t_mem = json.loads(t_mem_raw) if t_mem_raw else []
+    
+    # Generate local ASCII map
+    local_map, is_inside = generate_local_map(cursor, drone_id, pts)
+    
     conn.close()
     print(f"⏱️ [Timing] MCP get_drone_context took {time.time()-t0:.4f}s", file=sys.stderr)
-    if not row: return {"error": "not found"}
-    t_mem = json.loads(row[5]) if row[5] else []
-    a_sec = json.loads(row[6]) if row[6] else None
     return {
-        "id": drone_id, "pos": {"x": row[0], "y": row[1]}, "battery": row[2], 
-        "status": row[3], "is_destroyed": bool(row[4]),
-        "thermal_memory": t_mem if t_mem is not None else [], 
-        "assigned_sector": a_sec
+        "id": drone_id, 
+        "pos": {"x": x, "y": y}, 
+        "battery": batt, 
+        "status": status, 
+        "is_destroyed": bool(destroyed),
+        "thermal_memory": t_mem,
+        "assigned_cells": pts,
+        "sector_map": local_map,
+        "sector_status": "INSIDE SECTOR" if is_inside else "EN ROUTE TO SECTOR"
     }
 
 @mcp.tool()
@@ -80,80 +95,6 @@ def thermal_scan(drone_id: str) -> str:
     msg = f"Revealed {revealed} cells."
     if new_auras: msg += f" Thermal auras detected nearby! Survivors are in adjacent cells."
     return msg
-
-@mcp.tool()
-def get_next_sector_step(drone_id: str) -> dict:
-    """Returns the closest unrevealed coordinate from the drone's assigned cell list."""
-    t0 = time.time()
-    
-    # Initialize basic log state
-    log_state = {
-        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
-        "drone_id": drone_id,
-        "action": "evaluating",
-        "position": None,
-        "assigned_cells_count": 0,
-        "unrevealed_in_sector_count": 0
-    }
-    
-    def write_log(result_obj):
-        log_state["result"] = result_obj
-        try:
-            with open("get_next_sector_step.txt", "a") as f:
-                f.write(json.dumps(log_state) + "\n")
-        except Exception as e:
-            print(f"Error writing to log: {e}", file=sys.stderr)
-        return result_obj
-
-    conn = db.get_db_conn()
-    cursor = conn.cursor()
-    cursor.execute("SELECT x, y, assigned_sector FROM drones WHERE id=?", (drone_id,))
-    row = cursor.fetchone()
-    if not row or not row[2]:
-        conn.close()
-        return write_log({"error": "no sector assigned"})
-    
-    cx, cy = row[0], row[1]
-    sector_raw = json.loads(row[2]) if row[2] else []
-    assigned_cells = sector_raw if sector_raw is not None else []
-    
-    log_state["position"] = [cx, cy]
-    log_state["assigned_cells_count"] = len(assigned_cells)
-    
-    # Filter for cells that are still unrevealed
-    unrevealed_in_sector = []
-    for cell in assigned_cells:
-        try:
-            if isinstance(cell, dict):
-                tx, ty = int(cell["x"]), int(cell["y"])
-            else:
-                tx, ty = int(cell[0]), int(cell[1])
-        except (ValueError, IndexError, TypeError):
-            continue
-            
-        cursor.execute("SELECT revealed FROM cells WHERE x=? AND y=?", (tx, ty))
-        c_row = cursor.fetchone()
-        if c_row and c_row[0] == 0:
-            unrevealed_in_sector.append((tx, ty))
-            
-    conn.close()
-    
-    log_state["unrevealed_in_sector_count"] = len(unrevealed_in_sector)
-    
-    if not unrevealed_in_sector:
-        # No more work in this assignment.
-        conn = db.get_db_conn()
-        cursor = conn.cursor()
-        cursor.execute("UPDATE drones SET assigned_sector=NULL WHERE id=?", (drone_id,))
-        conn.commit()
-        conn.close()
-        print(f"⏱️ [Timing] MCP get_next_sector_step took {time.time()-t0:.4f}s", file=sys.stderr)
-        return write_log({"status": "sector_complete"})
-        
-    # Find the closest unrevealed cell in the set
-    closest = min(unrevealed_in_sector, key=lambda c: abs(c[0] - cx) + abs(c[1] - cy))
-    print(f"⏱️ [Timing] MCP get_next_sector_step took {time.time()-t0:.4f}s", file=sys.stderr)
-    return write_log({"x": closest[0], "y": closest[1]})
 
 @mcp.tool()
 def check_task_viability(drone_id: str, target_x: int, target_y: int) -> dict:

@@ -57,7 +57,9 @@ class SwarmCombinedFlow:
                 # Check for content from the model (text or thoughts)
                 if event.content and event.author != "user" and event.author != "tool":
                     parts_to_ui = []
-                    for p in event.content.parts:
+                    # Safely iterate over parts if they exist
+                    parts = getattr(event.content, 'parts', []) or []
+                    for p in parts:
                         if hasattr(p, 'text') and p.text:
                             parts_to_ui.append(p.text)
 

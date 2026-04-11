@@ -6,7 +6,7 @@ SCENARIO INSPIRATION: {scenario}
 
 CORE PLACEMENT LOGIC:
 1. Central Base (9,9): MUST be completely empty terrain, do not place anything here. Maintain a 2-cell clear buffer around it (no buildings in coordinates where x or y is 8, 9, or 10).
-2. Sparse Distribution: Do not pack the map. Aim for 15-25% total building coverage. Buildings should feel like they belong to a planned area, not randomly scattered dots.
+2. Sparse Distribution: Do not pack the map. Aim for 15-25% total building coverage.
 3. Road Network: To simulate a logical city/village, you MUST maintain 'empty corridors' (roads). 
    - Leave at least one row or column empty every 3 to 4 units to act as streets.
    - Buildings should line up along these imaginary streets.

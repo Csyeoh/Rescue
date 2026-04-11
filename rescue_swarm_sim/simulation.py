@@ -8,10 +8,8 @@ import db
 DB_PATH = "live_state.db"
 
 class CellAgent(Agent):
-    def __init__(self, unique_id, model, altitude, b_height, is_ob, t_type, is_thermal_aura = False):
+    def __init__(self, unique_id, model, is_ob, t_type, is_thermal_aura = False):
         super().__init__(unique_id, model)
-        self.altitude = altitude
-        self.building_height = b_height
         self.is_obstacle = is_ob
         self.terrain_type = t_type
         self.obstacle_discovered = False
@@ -29,7 +27,7 @@ class DroneAgent(Agent):
         super().__init__(unique_id, model)
         self.battery = battery
         self.status = "IDLE"
-        self.assigned_sector = None
+        self.assigned_cells = None
         self.thermal_memory = []
         self.is_destroyed = False
 
@@ -70,7 +68,7 @@ class DisasterZoneModel(Model):
         survivors = map_data.get("blueprint", {}).get("survivors", [])
 
         for c in cells:
-            cell = CellAgent(f"c_{c['x']}_{c['y']}", self, c['altitude'], c.get('building_height', 0), c['is_obstacle'], c['terrain_type'])
+            cell = CellAgent(f"c_{c['x']}_{c['y']}", self, c['is_obstacle'], c['terrain_type'])
             if c['x'] == 9 and c['y'] == 9: cell.revealed = True
             self.grid.place_agent(cell, (c['x'], c['y']))
 
@@ -100,14 +98,14 @@ class DisasterZoneModel(Model):
         drone_data = []
         for a in self.schedule.agents:
             if isinstance(a, DroneAgent):
-                drone_data.append((a.unique_id, a.pos[0], a.pos[1], a.battery, a.status, int(a.is_destroyed), json.dumps(a.thermal_memory), json.dumps(a.assigned_sector)))
+                drone_data.append((a.unique_id, a.pos[0], a.pos[1], a.battery, a.status, int(a.is_destroyed), json.dumps(a.thermal_memory), json.dumps(a.assigned_cells)))
                 
         cell_data = []
         survivor_data = []
         for contents, (x, y) in self.grid.coord_iter():
             for obj in contents:
                 if isinstance(obj, CellAgent):
-                    cell_data.append((x, y, obj.altitude, obj.building_height, int(obj.is_obstacle), int(obj.obstacle_discovered), obj.terrain_type, int(obj.thermal_aura), int(obj.revealed), obj.assigned_to))
+                    cell_data.append((x, y, int(obj.is_obstacle), int(obj.obstacle_discovered), obj.terrain_type, int(obj.thermal_aura), int(obj.revealed), obj.assigned_to))
                 elif isinstance(obj, SurvivorAgent):
                     survivor_data.append((obj.unique_id, x, y, int(obj.found)))
                     
@@ -148,13 +146,13 @@ class DisasterZoneModel(Model):
         cursor = conn.cursor()
         
         # Update Drones (including status which was missing before)
-        cursor.execute("SELECT id, status, assigned_sector, thermal_memory FROM drones")
+        cursor.execute("SELECT id, status, assigned_cells, thermal_memory FROM drones")
         drone_rows = {r[0]: r for r in cursor.fetchall()}
         for a in self.schedule.agents:
             if isinstance(a, DroneAgent) and a.unique_id in drone_rows:
                 r = drone_rows[a.unique_id]
                 a.status = r[1]
-                a.assigned_sector = json.loads(r[2]) if r[2] else None
+                a.assigned_cells = json.loads(r[2]) if r[2] else None
                 a.thermal_memory = json.loads(r[3]) if r[3] else []
         
         # Update Cells (crucial for preserving revealed status and assignments)
@@ -181,7 +179,7 @@ class DisasterZoneModel(Model):
                     "drone_id": d_id,
                     "coordinate": drone.pos,
                     "status": drone.status,
-                    "assigned_sector": drone.assigned_sector,
+                    "assigned_cells": drone.assigned_cells,
                     "target_cell": (tx, ty)
                 })
 
@@ -233,7 +231,7 @@ class DisasterZoneModel(Model):
                 f.write("Mission Log\n")
                 f.write("="*50 + "\n")
                 for log in self.step_logs:
-                    f.write(f"Step: {log['step']} | Drone: {log['drone_id']} | Coord: {log['coordinate']} | Status: {log['status']} | Sector: {log['assigned_sector']} | Target: {log['target_cell']}\n")
+                    f.write(f"Step: {log['step']} | Drone: {log['drone_id']} | Coord: {log['coordinate']} | Status: {log['status']} | Sector: {log['assigned_cells']} | Target: {log['target_cell']}\n")
         except Exception as e:
             print(f"Failed to write log file: {e}")
 

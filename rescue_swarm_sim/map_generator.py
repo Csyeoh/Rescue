@@ -14,15 +14,10 @@ class Location(BaseModel):
     x: int = Field(description="X coordinate (0-19)")
     y: int = Field(description="Y coordinate (0-19)")
 
-class Hill(Location):
-    peak_altitude: float = Field(description="Peak altitude in meters (20.0 to 80.0)")
-    spread: float = Field(description="How fast the altitude drops off (1.5 to 3.0)")
-
 class Building(Location):
-    type: str = Field(description="'single_story' or 'multiple_story'")
+    pass
 
 class MapBlueprint(BaseModel):
-    hills: list[Hill] = Field(description="1 to 3 hills on the map")
     buildings: list[Building] = Field(description="A list of specific buildings in the urban areas")
     survivors: list[Location] = Field(description="Coordinates of trapped survivors, which MUST be inside buildings")
 
@@ -59,11 +54,10 @@ def generate_semantic_blueprint(scenario: str, num_survivors: int) -> MapBluepri
 
 # Algorithm for Building the Map
 def build_terrain_matrix(blueprint: MapBlueprint, obstacle_prob: float, width: int = 20, height: int = 20) -> list[dict]:   
-    hills = [{"x": h.x, "y": h.y, "peak_altitude": h.peak_altitude, "spread": h.spread} for h in blueprint.hills]
-    buildings = [{"x": b.x, "y": b.y, "type": b.type} for b in blueprint.buildings]
+    buildings = [{"x": b.x, "y": b.y} for b in blueprint.buildings]
     survivors_locs = {(s.x, s.y) for s in blueprint.survivors}
         
-    building_map = {(b["x"], b["y"]): b["type"] for b in buildings}
+    building_map = {(b["x"], b["y"]) for b in buildings}
     
     cells = []
     
@@ -74,37 +68,15 @@ def build_terrain_matrix(blueprint: MapBlueprint, obstacle_prob: float, width: i
             if x == 9 and y == 9:
                 cells.append({
                     "x": x, "y": y,
-                    "altitude": 150.0,
                     "is_obstacle": False,
                     "terrain_type": "terrain"
                 })
                 continue
                 
-            # 2. Base altitude from Hills
-            altitude = 1.0 
-            for hill in hills:
-                hx, hy = hill["x"], hill["y"]
-                h_max = hill.get("peak_altitude", 40.0)
-                h_spread = hill.get("spread", 1.5)
-                
-                dist = math.sqrt((x - hx)**2 + (y - hy)**2)
-                hill_height = h_max - (dist * h_spread)
-                if hill_height > altitude:
-                    altitude = hill_height
-                    
-            altitude += random.uniform(-0.5, 0.5)
-            altitude = max(1.0, altitude) 
-            
-            # 3. Apply Building Types & Heights
+            # 3. Apply Building Types
             t_type = "terrain"
             if (x, y) in building_map:
-                b_type = building_map[(x, y)]
-                if b_type == "multiple_story":
-                    t_type = "multiple_story"
-                    altitude += random.uniform(6.0, 10.0)
-                else:
-                    t_type = "single_story"
-                    altitude += random.uniform(3.0, 5.0)
+                t_type = "building"
             
             # Generate Physical Obstacles (NEVER on buildings or survivors)
             is_ob = False
@@ -113,7 +85,6 @@ def build_terrain_matrix(blueprint: MapBlueprint, obstacle_prob: float, width: i
                 
             cells.append({
                 "x": x, "y": y,
-                "altitude": altitude,
                 "is_obstacle": is_ob,
                 "terrain_type": t_type
             })

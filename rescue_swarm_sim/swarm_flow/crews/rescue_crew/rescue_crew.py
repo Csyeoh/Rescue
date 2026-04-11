@@ -1,11 +1,26 @@
 import os
-import yaml
 import sys
+import ssl
+
+# Fix for ngrok self-signed certificate errors
+# MUST BE DONE BEFORE IMPORTING LITELLM OR ADK
+os.environ["LITELLM_SSL_VERIFY"] = "False"
+os.environ["SSL_VERIFY"] = "False"
+
+import ssl
+ssl._create_default_https_context = ssl._create_unverified_context
+
+import litellm
+litellm.ssl_verify = False
+# litellm.set_verbose = True # Uncomment for deep debugging
+
 from pathlib import Path
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from google.adk import Agent
+from google.adk.planners import PlanReActPlanner
 from google.adk.tools.mcp_tool import McpToolset, StdioConnectionParams
+from google.adk.models import LiteLlm
 from mcp.client.stdio import StdioServerParameters
 from dotenv import load_dotenv
 
@@ -23,12 +38,9 @@ class DroneIntent(BaseModel):
 
 class RescueCrew:
     def __init__(self):
-        base_path = Path(__file__).parent / 'config'
-        with open(base_path / 'agents.yaml', 'r') as f:
-            self.agents_config = yaml.safe_load(f)
-        with open(base_path / 'tasks.yaml', 'r') as f:
-            self.tasks_config = yaml.safe_load(f)
+        self.prompts_path = Path(__file__).parent / 'prompts'
         
+        # self.model = LiteLlm(model="ollama_chat/qwen3.5:4b", api_base="https://fondling-reformer-splatter.ngrok-free.dev")
         self.model = "gemini-2.5-flash"
         
         # Initialize MCP Servers
@@ -55,49 +67,24 @@ class RescueCrew:
         )
 
     def get_dispatcher_agent(self) -> Agent:
-        config = self.agents_config['swarm_dispatcher']
-        task_config = self.tasks_config['dispatch_task']
-        
-        instruction = f"{config['goal']}\n{config['backstory']}\n\nTask: {task_config['description']}"
+        with open(self.prompts_path / 'dispatcher.md', 'r') as f:
+            instruction = f.read()
         
         agent = Agent(
             name="swarm_dispatcher",
-            description=config['role'],
+            description=" A swarm dispatcher that coordinate and assign sector in a disaster zone to the drone swarm",
             instruction=instruction,
             model=self.model,
-            tools=[self.dispatcher_mcp_toolset]
+            tools=[self.dispatcher_mcp_toolset],
+            planner=PlanReActPlanner()
         )
         return agent
 
-    # def get_operator_agent(self, fleet_state: str) -> Agent:
-    #     config = self.agents_config['swarm_drone_operator']
-    #     task_config = self.tasks_config['batch_drone_task']
-        
-    #     instruction = f"{config['goal']}\n{config['backstory']}\n\nTask: {task_config['description'].format(fleet_state=fleet_state)}"
-        
-    #     agent = Agent(
-    #         name="swarm_drone_operator",
-    #         description=config['role'],
-    #         instruction=instruction,
-    #         model=self.model,
-    #         tools=[self.mcp_toolset],
-    #         output_schema=BatchDroneIntents,
-    #         disallow_transfer_to_parent=True,
-    #         disallow_transfer_to_peers=True
-    #     )
-    #     return agent
-
     def get_drone_agent(self, drone_id: str) -> Agent:
-        config = self.agents_config['single_drone_agent']
-        task_config = self.tasks_config['drone_move_task']
+        with open(self.prompts_path / 'drone_pilot.md', 'r') as f:
+            instruction_template = f.read()
         
-        # Use .format to inject drone_id into goal and backstory if needed
-        # Or just pass it in instruction
-        goal = config['goal'].format(drone_id=drone_id)
-        backstory = config['backstory'].format(drone_id=drone_id)
-        task_desc = task_config['description'].format(drone_id=drone_id)
-        
-        instruction = f"{goal}\n{backstory}\n\nTask: {task_desc}"
+        instruction = instruction_template.format(drone_id=drone_id)
         
         agent = Agent(
             name=f"pilot_{drone_id}",

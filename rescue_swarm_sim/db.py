@@ -11,8 +11,8 @@ def init_db():
     
     conn = get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE drones (id TEXT PRIMARY KEY, x INTEGER, y INTEGER, battery INTEGER, status TEXT, is_destroyed INTEGER, thermal_memory TEXT, assigned_sector TEXT, target_x INTEGER, target_y INTEGER)")
-    cursor.execute("CREATE TABLE cells (x INTEGER, y INTEGER, altitude REAL, building_height REAL, is_obstacle INTEGER, obstacle_discovered INTEGER, terrain_type TEXT, thermal_aura INTEGER, revealed INTEGER, assigned_to TEXT, PRIMARY KEY(x,y))")
+    cursor.execute("CREATE TABLE drones (id TEXT PRIMARY KEY, x INTEGER, y INTEGER, battery INTEGER, status TEXT, is_destroyed INTEGER, thermal_memory TEXT, assigned_cells TEXT, target_x INTEGER, target_y INTEGER)")
+    cursor.execute("CREATE TABLE cells (x INTEGER, y INTEGER, is_obstacle INTEGER, obstacle_discovered INTEGER, terrain_type TEXT, thermal_aura INTEGER, revealed INTEGER, assigned_to TEXT, PRIMARY KEY(x,y))")
     cursor.execute("CREATE TABLE survivors (id TEXT PRIMARY KEY, x INTEGER, y INTEGER, found INTEGER)")
     cursor.execute("CREATE TABLE mission_state (id INTEGER PRIMARY KEY, tick_count INTEGER, complete INTEGER, failed INTEGER, total_survivors INTEGER, found_survivors INTEGER)")
     cursor.execute("INSERT INTO mission_state (id, tick_count, complete, failed, total_survivors, found_survivors) VALUES (1, 0, 0, 0, 0, 0)")
@@ -40,7 +40,7 @@ def sync_world_state(drone_data, cell_data, survivor_data, mission_data):
             cursor.executemany("INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?,NULL,NULL)", drone_data)
         
         if cell_data:
-            cursor.executemany("INSERT OR REPLACE INTO cells VALUES (?,?,?,?,?,?,?,?,?,?)", cell_data)
+            cursor.executemany("INSERT OR REPLACE INTO cells VALUES (?,?,?,?,?,?,?,?)", cell_data)
         
         if survivor_data:
             cursor.executemany("INSERT OR REPLACE INTO survivors VALUES (?,?,?,?)", survivor_data)
