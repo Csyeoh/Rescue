@@ -55,7 +55,6 @@ def get_current_mission_status() -> str:
     report.append(ascii_map)
     report.append("```")
     
-    print(f"⏱️ [Timing] MCP get_current_mission_status took {time.time()-t0:.4f}s", file=sys.stderr)
     return "\n".join(report)
 
 @mcp.tool()
@@ -94,7 +93,6 @@ def allocate_drone_sector(drone_id: str, assigned_cells: list) -> str:
     
     conn.commit()
     conn.close()
-    print(f"⏱️ [Timing] MCP allocate_drone_sector took {time.time()-t0:.4f}s", file=sys.stderr)
     return f"Successfully allocated {assigned_count} cells to {drone_id}."
 
 

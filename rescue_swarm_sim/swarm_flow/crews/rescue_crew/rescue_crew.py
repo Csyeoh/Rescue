@@ -2,17 +2,8 @@ import os
 import sys
 import ssl
 
-# Fix for ngrok self-signed certificate errors
-# MUST BE DONE BEFORE IMPORTING LITELLM OR ADK
-os.environ["LITELLM_SSL_VERIFY"] = "False"
-os.environ["SSL_VERIFY"] = "False"
-
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
-
-import litellm
-litellm.ssl_verify = False
-# litellm.set_verbose = True # Uncomment for deep debugging
 
 from pathlib import Path
 from typing import Optional, List

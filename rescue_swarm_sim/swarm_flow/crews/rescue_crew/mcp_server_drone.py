@@ -34,7 +34,6 @@ def get_drone_context(drone_id: str) -> dict:
     local_map, is_inside = generate_local_map(cursor, drone_id, pts)
     
     conn.close()
-    print(f"⏱️ [Timing] MCP get_drone_context took {time.time()-t0:.4f}s", file=sys.stderr)
     return {
         "id": drone_id, 
         "pos": {"x": x, "y": y}, 
@@ -91,7 +90,6 @@ def thermal_scan(drone_id: str) -> str:
     conn.commit()
     conn.close()
     
-    print(f"⏱️ [Timing] MCP thermal_scan took {time.time()-t0:.4f}s", file=sys.stderr)
     msg = f"Revealed {revealed} cells."
     if new_auras: msg += f" Thermal auras detected nearby! Survivors are in adjacent cells."
     return msg
@@ -132,7 +130,6 @@ def check_task_viability(drone_id: str, target_x: int, target_y: int) -> dict:
     d1 = get_dist(start, (target_x, target_y))
     d2 = get_dist((target_x, target_y), (9, 9))
     required = (d1 + d2) * 2 + 10
-    print(f"⏱️ [Timing] MCP check_task_viability took {time.time()-t0:.4f}s", file=sys.stderr)
     return {"viable": battery >= required, "required": required, "current": battery}
 
 @mcp.tool()
@@ -149,8 +146,7 @@ def get_navigation_step(drone_id: str, target_x: int, target_y: int) -> dict:
     
     goal = (target_x, target_y)
     if start == goal: 
-        print(f"⏱️ [Timing] MCP get_navigation_step took {time.time()-t0:.4f}s", file=sys.stderr)
-        return {"x": start[0], "y": start[1]}
+            return {"x": start[0], "y": start[1]}
     
     frontier = [(0, start)]
     came_from = {start: None}; cost = {start: 0}
@@ -167,14 +163,12 @@ def get_navigation_step(drone_id: str, target_x: int, target_y: int) -> dict:
                     came_from[nxt] = current
     
     if goal not in came_from: 
-        print(f"⏱️ [Timing] MCP get_navigation_step took {time.time()-t0:.4f}s", file=sys.stderr)
-        return {"x": start[0], "y": start[1]}
+            return {"x": start[0], "y": start[1]}
     path = []
     curr = goal
     while curr != start:
         path.append(curr)
         curr = came_from[curr]
-    print(f"⏱️ [Timing] MCP get_navigation_step took {time.time()-t0:.4f}s", file=sys.stderr)
     return {"x": path[-1][0], "y": path[-1][1]}
 
 if __name__ == "__main__":

@@ -71,7 +71,6 @@ class SwarmCombinedFlow:
                             "plan": combined_content,
                             "ready": event.is_final_response()
                         }
-                        print(f"Sending UI event 'agent_reasoning_completed' with payload: {payload}")
                         websocket_manager.send_to_ui("agent_reasoning_completed", payload)
                         if event.is_final_response():
                             final_text = combined_content
@@ -86,7 +85,6 @@ class SwarmCombinedFlow:
                             "result": "Executing...",
                             "execution_duration_ms": 0
                         }
-                        print(f"Sending UI event 'mcp_tool_execution_completed' (call) with payload: {payload}")
                         websocket_manager.send_to_ui("mcp_tool_execution_completed", payload)
 
                 # Check for Tool Responses
@@ -99,7 +97,6 @@ class SwarmCombinedFlow:
                             "result": str(resp.response),
                             "execution_duration_ms": 0
                         }
-                        print(f"Sending UI event 'mcp_tool_execution_completed' (response) with payload: {payload}")
                         websocket_manager.send_to_ui("mcp_tool_execution_completed", payload)
 
             await runner.close()
@@ -180,7 +177,6 @@ class SwarmCombinedFlow:
         await self.run_agent(parallel_agent, "Each pilot: determine your next tactical move.")
         
         t_crew_end = time.time()
-        print(f"⏱️ [Timing] ADK Parallel Execution took {t_crew_end - t_crew_start:.2f}s")
         
         # Extract results from session state
         batch_intents = {}
@@ -206,7 +202,6 @@ class SwarmCombinedFlow:
         t_phys_start = time.time()
         simulation.sim_world.step(batch_intents)
         t_phys_end = time.time()
-        print(f"⏱️ [Timing] Simulation Physics & DB Sync took {t_phys_end - t_phys_start:.4f}s")
         
         # 4. UI Update
         from .tools.state_reader import get_current_map_state
@@ -214,7 +209,6 @@ class SwarmCombinedFlow:
         websocket_manager.send_to_ui("tick_update", state)
         
         t_total = time.time() - self.tick_start_time
-        print(f"⏱️ [Timing] Total Tick Duration: {t_total:.2f}s\n")
 
 def kickoff():
     flow = SwarmCombinedFlow()

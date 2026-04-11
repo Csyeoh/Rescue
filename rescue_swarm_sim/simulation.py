@@ -114,7 +114,6 @@ class DisasterZoneModel(Model):
         db.sync_world_state(drone_data, cell_data, survivor_data, mission_data)
         
         t1 = time.time()
-        print(f"⏱️ [Timing] DB Sync (Batch of {len(cell_data)} cells) took {t1 - t0:.4f}s", file=sys.stderr)
 
     def log_action(self, d_id, msg):
         print(f"Logging action - Drone: {d_id}, Msg: {msg}, Tick: {self.tick_count}")
