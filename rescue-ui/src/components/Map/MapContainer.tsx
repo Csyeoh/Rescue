@@ -86,10 +86,7 @@ export const MapContainer: React.FC<MapContainerProps> = ({
       <footer className="shrink-0 bg-white/90 backdrop-blur-sm p-5 rounded-2xl shadow-sm border border-azure-pale/50 flex flex-wrap items-center justify-center gap-x-12 gap-y-4">
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-2.5 text-[13px] font-bold text-azure-dark capitalize">
-            <div className="w-4 h-4 bg-[#ff8a8a] rounded-sm shadow-sm" /> Single-story
-          </div>
-          <div className="flex items-center gap-2.5 text-[13px] font-bold text-azure-dark capitalize">
-            <div className="w-4 h-4 bg-[#b30000] rounded-sm shadow-sm" /> Multi-story
+            <div className="w-4 h-4 bg-[#ff8a8a] rounded-sm shadow-sm" /> Building
           </div>
           <div className="flex items-center gap-2.5 text-[13px] font-bold text-azure-dark capitalize">
             <div className="w-4 h-4 bg-black rounded-sm shadow-sm" /> Obstacle
@@ -117,17 +114,6 @@ export const MapContainer: React.FC<MapContainerProps> = ({
               className="w-3 h-3 bg-blue-400 rounded-full shadow-[0_0_8px_rgba(96,165,250,0.6)]" 
             /> 
             Drone
-          </div>
-        </div>
-
-        <div className="h-5 w-px bg-azure-pale/50" />
-
-        <div className="flex items-center gap-5">
-          <span className="text-[12px] font-bold text-azure-mid capitalize tracking-tight">Elevation</span>
-          <div className="flex items-center gap-2.5 text-[12px] font-bold text-azure-mid italic">
-            <span>Lo</span>
-            <div className="w-24 h-2 bg-gradient-to-r from-emerald-100 to-emerald-900 rounded-full shadow-inner" />
-            <span>Hi</span>
           </div>
         </div>
       </footer>

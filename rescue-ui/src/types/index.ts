@@ -5,15 +5,13 @@ export interface GridCell {
   x: number;
   y: number;
   type: EntityType;
-  height: number; // 1-9 for elevation
+  height: number;
   revealed: boolean;
   isIlluminated: boolean;
   isRescued?: boolean;
   hasSurvivor?: boolean;
   obstacleDiscovered?: boolean;
   thermal_aura?: boolean;
-  altitude?: number;
-  buildingHeight?: number;
 }
 
 export interface DroneStatus {
@@ -49,8 +47,6 @@ export interface MissionConfig {
   survivors: number;
   droneCount: number;
   obstacleDensity: 'low' | 'med' | 'high';
-  buildingHeight: number;
-  terrainHeight: number;
   disasterType: DisasterType;
   difficulty: 'easy' | 'normal' | 'hard';
   // Environmental Unknowns

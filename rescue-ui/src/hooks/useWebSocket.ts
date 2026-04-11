@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { WS_URL, GRID_SIZE } from '../constants';
+import { WS_URL, GRID_SIZE, BASE_X, BASE_Y } from '../constants';
 import { DroneStatus, GridCell, LogEntry } from '../types';
 import { buildGridFromMapData } from '../utils/map-utils';
 
@@ -139,8 +139,14 @@ export const useWebSocket = ({
               const y = Number(upd.y);
               if (!(x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE)) continue;
               const cell = next[y][x];
-              cell.altitude = upd.altitude;
-              cell.type = upd.is_obstacle ? 'obstacle' : (upd.terrain_type === 'single_story' || upd.terrain_type === 'multiple_story' ? 'building' : 'empty');
+              
+              // Preserve 'base' type for the base station coordinate
+              if (x === BASE_X && y === BASE_Y) {
+                cell.type = 'base';
+              } else {
+                cell.type = upd.is_obstacle ? 'obstacle' : (upd.terrain_type === 'building' ? 'building' : 'empty');
+              }
+              
               cell.obstacleDiscovered = Boolean(upd.obstacle_discovered);
               cell.thermal_aura = Boolean(upd.thermal_aura);
               cell.revealed = Boolean(upd.revealed);

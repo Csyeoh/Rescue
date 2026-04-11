@@ -12,8 +12,6 @@ export const useMissionControl = () => {
     survivors: 10,
     droneCount: 5,
     obstacleDensity: 'med',
-    buildingHeight: 7,
-    terrainHeight: 5,
     disasterType: 'default',
     difficulty: 'normal',
     windSpeed: 20,

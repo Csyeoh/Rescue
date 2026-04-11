@@ -17,15 +17,8 @@ export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, dronesH
     if (!isRevealed) return '#94a3b8'; // Neutral Slate-400 for unrevealed
     if (effectiveType === 'base') return '#164e63'; // Dark Cyan Base
     if (effectiveType === 'obstacle') return '#000000'; // High contrast black
-    if (effectiveType === 'building') {
-      return cell.buildingHeight && cell.buildingHeight > 5 ? '#b30000' : '#ff8a8a';
-    }
-
-    // Altitude-based gradient for terrain (Green/Teal spectrum)
-    const alt = cell.altitude ?? 0;
-    // Map 0-100 altitude to HSL lightness 85% to 25%
-    const lightness = 85 - (alt / 100) * 60;
-    return `hsl(161, 45%, ${lightness}%)`;
+    if (effectiveType === 'building') return '#ff8a8a';
+    return '#416e6f'; // Azure Dark for terrain
   };
 
   return (
@@ -50,15 +43,9 @@ export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, dronesH
             className="bg-neutral-dark text-white text-[11px] px-3 py-2 rounded-xl shadow-2xl whitespace-nowrap flex flex-col gap-1 border border-white/10"
           >
             <div className="flex justify-between gap-4">
-              <span className="text-white/40 font-bold capitalize">Altitude</span>
-              <span className="font-mono text-emerald-400">{(cell.altitude ?? 0).toFixed(1)}m</span>
+              <span className="text-white/40 font-bold capitalize">Type</span>
+              <span className="font-mono text-emerald-400 capitalize">{cell.type}</span>
             </div>
-            {cell.type === 'building' && (
-              <div className="flex justify-between gap-4 border-t border-white/5 pt-1">
-                <span className="text-white/40 font-bold capitalize">Building</span>
-                <span className="font-mono text-alert-red">{(cell.buildingHeight ?? 0).toFixed(1)}m</span>
-              </div>
-            )}
             <div className="flex justify-between gap-4 border-t border-white/5 pt-1">
               <span className="text-white/40 font-bold capitalize">Position</span>
               <span className="font-mono text-azure-pale">{cell.x}, {cell.y}</span>

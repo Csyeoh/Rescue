@@ -47,24 +47,16 @@ export const buildGridFromMapData = (map_data: any): GridCell[][] => {
     const terrainType = String(c.terrain_type ?? '');
     const isObstacle = Boolean(c.is_obstacle);
     
-    cell.altitude = Number(c.altitude ?? 0);
-    cell.buildingHeight = Number(c.building_height ?? 0);
-
     if (isObstacle) {
       cell.type = 'obstacle';
       cell.obstacleDiscovered = Boolean(c.obstacle_discovered);
-    } else if (terrainType === 'single_story' || terrainType === 'multiple_story') {
+    } else if (terrainType === 'building') {
       cell.type = 'building';
     } else {
       cell.type = 'empty';
     }
     
-    if (cell.type === 'building') {
-      cell.height = terrainType === 'multiple_story' ? 2 : 1;
-    } else {
-      const scaled = Math.max(1, Math.min(9, Math.round((cell.altitude / 100) * 8) + 1));
-      cell.height = scaled;
-    }
+    cell.height = cell.type === 'building' ? 2 : 1;
   }
 
   const survivors = map_data?.survivors ?? [];
