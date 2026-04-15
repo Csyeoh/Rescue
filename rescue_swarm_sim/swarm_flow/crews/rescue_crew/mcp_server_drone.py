@@ -8,30 +8,26 @@ from fastmcp import FastMCP
 import heapq
 import json
 import time
-import io
-from swarm_flow.tools.ascii_map import generate_local_map
 import db
 
 mcp = FastMCP("DroneSwarm")
 
 @mcp.tool()
 def get_drone_context(drone_id: str) -> dict:
-    """Returns local ASCII map, position, battery, thermal memory, and sector status."""
+    """Returns local position, battery, thermal memory, and sector status."""
     t0 = time.time()
     conn = db.get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT x, y, battery, status, is_destroyed, thermal_memory, assigned_cells FROM drones WHERE id=?", (drone_id,))
+    cursor.execute("SELECT x, y, battery, status, thermal_memory, assigned_cells FROM drones WHERE id=?", (drone_id,))
     row = cursor.fetchone()
     if not row:
         conn.close()
         return {"error": "not found"}
     
-    x, y, batt, status, destroyed, t_mem_raw, pts_raw = row
+    x, y, batt, status, t_mem_raw, pts_raw = row
     pts = json.loads(pts_raw) if pts_raw else []
     t_mem = json.loads(t_mem_raw) if t_mem_raw else []
     
-    # Generate local ASCII map
-    local_map, is_inside = generate_local_map(cursor, drone_id, pts)
     
     conn.close()
     return {
@@ -39,11 +35,8 @@ def get_drone_context(drone_id: str) -> dict:
         "pos": {"x": x, "y": y}, 
         "battery": batt, 
         "status": status, 
-        "is_destroyed": bool(destroyed),
         "thermal_memory": t_mem,
-        "assigned_cells": pts,
-        "sector_map": local_map,
-        "sector_status": "INSIDE SECTOR" if is_inside else "EN ROUTE TO SECTOR"
+        "assigned_cells": pts
     }
 
 @mcp.tool()

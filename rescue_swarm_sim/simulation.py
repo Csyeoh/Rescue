@@ -116,7 +116,6 @@ class DisasterZoneModel(Model):
         t1 = time.time()
 
     def log_action(self, d_id, msg):
-        print(f"Logging action - Drone: {d_id}, Msg: {msg}, Tick: {self.tick_count}")
         self.mission_logs.append({"drone_id": d_id, "message": msg, "tick": self.tick_count})
 
     def update_thermal_auras(self):
@@ -168,9 +167,10 @@ class DisasterZoneModel(Model):
             for d_id, intent in batch_intents.items():
                 drone = next((a for a in self.schedule.agents if a.unique_id == d_id), None)
                 if not drone or drone.is_destroyed: continue
-                drone.status = intent.get("status", drone.status)
                 
-                action = intent.get("action")
+                new_status = intent.get("status", drone.status)
+                drone.status = new_status
+                
                 tx, ty = intent.get("x", drone.pos[0]), intent.get("y", drone.pos[1])
 
                 self.step_logs.append({
@@ -182,16 +182,19 @@ class DisasterZoneModel(Model):
                     "target_cell": (tx, ty)
                 })
 
-                if action == "search":
+                # Movement & Logic driven by status
+                # If searching or returning, we move to the target (x, y)
+                if new_status in ["SEARCHING", "RETURNING"]:
+                    # Collision Check
                     crash = any(isinstance(o, CellAgent) and o.is_obstacle for o in self.grid.get_cell_list_contents([(tx, ty)]))
                     if crash:
-                        drone.status = "CRASHED"; drone.is_destroyed = True
+                        drone.status = "CRASHED"
+                        drone.is_destroyed = True
                         self.log_action(d_id, "Fatal crash!")
                     else:
                         drone.move((tx, ty))
 
-                # Reveal current and adjacent cells for MOVE or SCAN
-                if action in ["search", "scan"]:
+                    # Reveal current and adjacent cells (standard cross pattern)
                     adj = [(tx, ty), (tx+1, ty), (tx-1, ty), (tx, ty+1), (tx, ty-1)]
                     for ax, ay in adj:
                         if 0 <= ax < 20 and 0 <= ay < 20:
@@ -213,26 +216,10 @@ class DisasterZoneModel(Model):
         destroyed = next((d for d in self.schedule.agents if getattr(d, "is_destroyed", False)), None)
         if destroyed: 
             self.mission_failed = True
-            print("Mission Failed: Drone Destroyed!")
         elif self.total_survivors > 0 and self.found_survivors >= self.total_survivors: 
             self.mission_complete = True
-            print("Mission Complete: All Survivors Found!")
         
         self.sync_to_db()
-
-        if self.mission_complete or self.mission_failed:
-            print("Generating log files")
-            self.generate_log_file()
-
-    def generate_log_file(self):
-        try:
-            with open("log_file.txt", "w") as f:
-                f.write("Mission Log\n")
-                f.write("="*50 + "\n")
-                for log in self.step_logs:
-                    f.write(f"Step: {log['step']} | Drone: {log['drone_id']} | Coord: {log['coordinate']} | Status: {log['status']} | Sector: {log['assigned_cells']} | Target: {log['target_cell']}\n")
-        except Exception as e:
-            print(f"Failed to write log file: {e}")
 
 sim_world = None
 def initialize_world(config=None):

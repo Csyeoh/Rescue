@@ -1,13 +1,5 @@
-import random
-import math
+import os
 from pydantic import BaseModel, Field
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
-
-from prompts.map_builder import MAP_BUILDER_PROMPT
-
-load_dotenv()
 
 # Pydantic Schemas for Structured Output 
 class Location(BaseModel):
@@ -21,72 +13,40 @@ class MapBlueprint(BaseModel):
     buildings: list[Building] = Field(description="A list of specific buildings in the urban areas")
     survivors: list[Location] = Field(description="Coordinates of trapped survivors, which MUST be inside buildings")
 
-# Generate a Semantic Blueprint
-def generate_semantic_blueprint(scenario: str, num_survivors: int) -> MapBlueprint | None:
-    """Uses Gemini to design a logical, realistic disaster zone using Pydantic structured output."""
-    client = genai.Client()
-
-    prompt = MAP_BUILDER_PROMPT.format(scenario=scenario, num_survivors=num_survivors)
-
-    try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=MapBlueprint,
-                temperature=0.3
-            ),
-        )
-        blueprint = MapBlueprint.model_validate_json(response.text)
-        
-        # FAIL-SAFE: Filter out any survivors accidentally placed within 2-cell buffer of base (9,9)
-        filtered_survivors = [
-            s for s in blueprint.survivors 
-            if not (s.x == 9 and s.y == 9)
-        ]
-        blueprint.survivors = filtered_survivors
-        
-        return blueprint
-    except Exception as e:
-        print(f"AI Generation Failed: {e}")
-        return None
-
-# Algorithm for Building the Map
-def build_terrain_matrix(blueprint: MapBlueprint, obstacle_prob: float, width: int = 20, height: int = 20) -> list[dict]:   
-    buildings = [{"x": b.x, "y": b.y} for b in blueprint.buildings]
-    survivors_locs = {(s.x, s.y) for s in blueprint.survivors}
-        
-    building_map = {(b["x"], b["y"]) for b in buildings}
+def parse_ascii_map(file_path: str = "map.txt") -> tuple[MapBlueprint, list[dict]]:
+    """Reads a valid ASCII map and natively compiles the arrays."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        lines = [line.strip() for line in f.readlines() if line.strip()]
     
+    buildings = []
+    survivors = []
     cells = []
     
-    for x in range(width):
-        for y in range(height):
-            
-            # Base Camp
-            if x == 9 and y == 9:
-                cells.append({
-                    "x": x, "y": y,
-                    "is_obstacle": False,
-                    "terrain_type": "terrain"
-                })
-                continue
-                
-            # 3. Apply Building Types
-            t_type = "terrain"
-            if (x, y) in building_map:
-                t_type = "building"
-            
-            # Generate Physical Obstacles (NEVER on buildings or survivors)
+    for y, line in enumerate(lines):
+        for x, char in enumerate(line):
             is_ob = False
-            if t_type == "terrain" and (x, y) not in survivors_locs:
-                is_ob = random.random() < obstacle_prob
-                
+            t_type = "terrain"
+            
+            if char == "B":
+                t_type = "building"
+                buildings.append(Building(x=x, y=y))
+            elif char == "S":
+                t_type = "building" 
+                buildings.append(Building(x=x, y=y))
+                if not (x == 9 and y == 9):
+                    survivors.append(Location(x=x, y=y))
+            elif char == "s":
+                t_type = "terrain" 
+                if not (x == 9 and y == 9):
+                    survivors.append(Location(x=x, y=y))
+            elif char == "#":
+                is_ob = True
+            
             cells.append({
                 "x": x, "y": y,
                 "is_obstacle": is_ob,
                 "terrain_type": t_type
             })
             
-    return cells
+    blueprint = MapBlueprint(buildings=buildings, survivors=survivors)
+    return blueprint, cells

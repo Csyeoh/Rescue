@@ -31,32 +31,18 @@ class SimulationConfig(BaseModel):
 @app.post("/api/generate_map")
 def generate_map(config: SimulationConfig):
     import map_generator
-    themes_map = {
-        "downtown": "A structured city center with multi-story blocks and wide transport avenues.",
-        "suburban": "A sparse residential neighborhood with houses separated by large yards and gardens.",
-        "industrial": "A low-density industrial park with warehouses placed in isolated clusters.",
-        "coastal": "A seaside settlement with buildings clustered on elevated ground away from the shore.",
-        "mixed urban": "A versatile urban environment with a mix of structures along a clean grid.",
-        "mountain outpost": "A rugged mountain village where outposts are tiered along natural terrain contours."
-    }
-    scenario_prompt = themes_map.get(config.scenario, "")
-    blueprint = map_generator.generate_semantic_blueprint(scenario_prompt, config.num_survivors)
-    
-    if blueprint is None:
-        return {"status": "error", "message": "Failed to generate AI map."}
-
-    obstacle_diff = config.obstacle_difficulty
-    prob_map = {"high": 0.15, "low": 0.05, "med": 0.10}
-    obstacle_prob = prob_map.get(obstacle_diff, 0.10)
-
-    cells = map_generator.build_terrain_matrix(blueprint, obstacle_prob, 20, 20)
-    
-    map_data = {
-        "blueprint": blueprint.model_dump() if hasattr(blueprint, 'model_dump') else blueprint.dict(),
-        "cells": cells,
-        "survivors": [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in blueprint.survivors]
-    }
-    return {"status": "success", "message": "Map generated.", "map_data": map_data}
+    try:
+        blueprint, cells = map_generator.parse_ascii_map("map.txt")
+        map_data = {
+            "blueprint": blueprint.model_dump() if hasattr(blueprint, 'model_dump') else blueprint.dict(),
+            "cells": cells,
+            "survivors": [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in blueprint.survivors]
+        }
+        return {"status": "success", "message": "Map strictly generated via static ascii txt.", "map_data": map_data}
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": f"Failed to parse map.txt: {str(e)}"}
 
 @app.post("/api/start_mission")
 def start_mission(config: SimulationConfig):
