@@ -11,7 +11,7 @@ export interface GridCell {
   isRescued?: boolean;
   hasSurvivor?: boolean;
   obstacleDiscovered?: boolean;
-  thermal_aura?: boolean;
+  isThermalScanned?: boolean;
 }
 
 export interface DroneStatus {

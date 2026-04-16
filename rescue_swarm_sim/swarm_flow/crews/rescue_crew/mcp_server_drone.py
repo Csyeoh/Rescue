@@ -40,52 +40,140 @@ def get_drone_context(drone_id: str) -> dict:
     }
 
 @mcp.tool()
-def thermal_scan(drone_id: str) -> str:
-    """Reveals adjacent cells, detects auras, and updates lists in DB."""
-    t0 = time.time()
+def view_surrounding(drone_id: str) -> dict:
+    """Reveals adjacent 1-cell radius and identifies exact components (N, S, E, W, CURRENT)."""
     conn = db.get_db_conn()
     cursor = conn.cursor()
-    # Get current pos
-    cursor.execute("SELECT x, y, thermal_memory FROM drones WHERE id=?", (drone_id,))
+    cursor.execute("SELECT x, y FROM drones WHERE id=?", (drone_id,))
     d_row = cursor.fetchone()
-    if not d_row: return "Error: drone not found"
-    cx, cy, t_mem_raw = d_row
-    t_mem_data = json.loads(t_mem_raw) if t_mem_raw else []
-    t_mem = t_mem_data if t_mem_data is not None else []
+    if not d_row: return {"error": "drone not found"}
+    cx, cy = d_row
     
-    # Reveal and Check Auras
-    adj = [(cx, cy), (cx, cy-1), (cx, cy+1), (cx-1, cy), (cx+1, cy)]
-    revealed = 0
-    new_auras = []
-    for ax, ay in adj:
+    surrounding = {}
+    offsets = {"CURRENT": (0,0), "N": (0,-1), "S": (0,1), "W": (-1,0), "E": (1,0)}
+    
+    cursor.execute("SELECT x, y FROM survivors WHERE found=0")
+    survivors_locs = {(row[0], row[1]) for row in cursor.fetchall()}
+    
+    for direction, (dx, dy) in offsets.items():
+        ax, ay = cx + dx, cy + dy
         if 0 <= ax < 20 and 0 <= ay < 20:
-            # Mark as revealed and discovered (if obstacle)
             cursor.execute("UPDATE cells SET revealed = 1, obstacle_discovered = CASE WHEN is_obstacle = 1 THEN 1 ELSE obstacle_discovered END WHERE x=? AND y=?", (ax, ay))
             
-            cursor.execute("SELECT thermal_aura FROM cells WHERE x=? AND y=?", (ax, ay))
+            cursor.execute("SELECT is_obstacle, terrain_type FROM cells WHERE x=? AND y=?", (ax, ay))
             c_row = cursor.fetchone()
-            if c_row and c_row[0] == 1:
-                pos = [ax, ay]
-                if pos not in t_mem:
-                    t_mem.append(pos)
-                    new_auras.append(f"({ax},{ay})")
-            revealed += 1
-
-    # WIPE OUT THERMAL MEMORY if aura is gone (meaning survivor was found)
-    updated_t_mem = []
-    for tx, ty in t_mem:
-        cursor.execute("SELECT thermal_aura FROM cells WHERE x=? AND y=?", (tx, ty))
-        aura_row = cursor.fetchone()
-        if aura_row and aura_row[0] == 1:
-            updated_t_mem.append([tx, ty])
-    
-    cursor.execute("UPDATE drones SET thermal_memory=? WHERE id=?", (json.dumps(updated_t_mem), drone_id))
+            if c_row:
+                is_ob, t_type = c_row
+                if (ax, ay) in survivors_locs:
+                    surrounding[direction] = "SURVIVOR"
+                elif is_ob:
+                    surrounding[direction] = "OBSTACLE"
+                elif t_type == "building":
+                    surrounding[direction] = "BUILDING"
+                else:
+                    surrounding[direction] = "EMPTY"
+        else:
+            surrounding[direction] = "OUT_OF_BOUNDS"
+            
     conn.commit()
     conn.close()
+    return surrounding
+
+def bresenham_line(x0, y0, x1, y1):
+    points = []
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    x, y = x0, y0
+    sx = -1 if x0 > x1 else 1
+    sy = -1 if y0 > y1 else 1
+    if dx > dy:
+        err = dx / 2.0
+        while x != x1:
+            points.append((x, y))
+            err -= dy
+            if err < 0:
+                y += sy
+                err += dx
+            x += sx
+    else:
+        err = dy / 2.0
+        while y != y1:
+            points.append((x, y))
+            err -= dx
+            if err < 0:
+                x += sx
+                err += dy
+            y += sy
+    points.append((x, y))
+    return points
+
+import random
+
+@mcp.tool()
+def thermal_scan(drone_id: str, direction: str) -> dict:
+    """Senses heat traces in a specific direction ('N', 'S', 'E', 'W') using a fan sensor. Obstacles block heat. Returns noisy signal %."""
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x, y FROM drones WHERE id=?", (drone_id,))
+    d_row = cursor.fetchone()
+    if not d_row: return {"error": "drone not found"}
+    cx, cy = d_row
     
-    msg = f"Revealed {revealed} cells."
-    if new_auras: msg += f" Thermal auras detected nearby! Survivors are in adjacent cells."
-    return msg
+    cursor.execute("SELECT x, y FROM cells WHERE is_obstacle=1")
+    obstacles = {(r[0], r[1]) for r in cursor.fetchall()}
+    
+    cursor.execute("SELECT x, y FROM survivors WHERE found=0")
+    survivors = {(r[0], r[1]) for r in cursor.fetchall()}
+    
+    direction = direction.upper()
+    valid_dirs = ["N", "S", "E", "W"]
+    if direction not in valid_dirs:
+        conn.close()
+        return {"error": "Invalid direction. Use N, S, E, or W."}
+        
+    MAX_DEPTH = 5
+    highest_true_score = 0
+    scanned_cells = []
+    
+    for d in range(1, MAX_DEPTH + 1):
+        for w in range(-d, d + 1):
+            if direction == "N": ax, ay = cx + w, cy - d
+            elif direction == "S": ax, ay = cx + w, cy + d
+            elif direction == "E": ax, ay = cx + d, cy + w
+            elif direction == "W": ax, ay = cx - d, cy + w
+            
+            if not (0 <= ax < 20 and 0 <= ay < 20):
+                continue
+                
+            # Line of sight check
+            line = bresenham_line(cx, cy, ax, ay)
+            occluded = False
+            for lx, ly in line[1:]: # Skip the drone's own cell
+                if (lx, ly) in obstacles:
+                    occluded = True
+                    break
+                    
+            if occluded:
+                continue
+                
+            scanned_cells.append({"x": ax, "y": ay})
+                
+            if (ax, ay) in survivors:
+                score = max(0, 100 - (d * 15))
+                if score > highest_true_score:
+                    highest_true_score = score
+                    
+    # Inject atmospheric/sensor noise +/- 12%
+    noise = random.randint(-12, 12)
+    final_score = max(0, min(100, highest_true_score + noise))
+    
+    if scanned_cells:
+        import time
+        cursor.execute("INSERT INTO thermal_scans (cells_json, timestamp) VALUES (?, ?)", (json.dumps(scanned_cells), time.time()))
+        conn.commit()
+
+    conn.close()
+    return {"direction": direction, "signal_strength": f"{final_score}%"}
 
 @mcp.tool()
 def check_task_viability(drone_id: str, target_x: int, target_y: int) -> dict:

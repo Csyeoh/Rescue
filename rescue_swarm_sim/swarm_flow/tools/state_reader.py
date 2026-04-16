@@ -24,7 +24,6 @@ def get_current_map_state() -> dict:
                     "is_obstacle": obj.is_obstacle,
                     "terrain_type": obj.terrain_type,
                     "obstacle_discovered": obj.obstacle_discovered,
-                    "thermal_aura": obj.thermal_aura,
                     "revealed": obj.revealed,
                     "assigned_drone": getattr(obj, "assigned_drone", None),
                 })
@@ -43,9 +42,27 @@ def get_current_map_state() -> dict:
                 "status": agent.status,
             })
 
+    import time
+    import json
+    import db
+    
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT cells_json FROM thermal_scans WHERE timestamp > ?", (time.time() - 5.0,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    scanned_cells = []
+    for r in rows:
+        try:
+            scanned_cells.extend(json.loads(r[0]))
+        except:
+            pass
+
     return {
         "grid": {"width": world.width, "height": world.height},
         "terrain": terrain,
         "drones": drones,
         "survivors": survivors,
+        "thermal_scans": scanned_cells,
     }

@@ -70,17 +70,15 @@ export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, dronesH
 
       {/* Agents Layer (Survivors and Drones) */}
       <div className="absolute inset-0 flex flex-wrap items-center justify-center gap-[1px] p-[1px] z-30 pointer-events-none overflow-hidden">
-        {/* Thermal Aura Indicator (Orange Pulse) */}
-        {isRevealed && cell.thermal_aura && !cell.hasSurvivor && !cell.isRescued && (
-          <motion.div 
-            animate={{ 
-              opacity: [0.3, 0.7, 0.3],
-              scale: [0.8, 1.2, 0.8]
-            }}
-            transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-            className="w-1.5 h-1.5 bg-orange-500/60 rounded-full blur-[1px] shrink-0"
-          />
-        )}
+      {/* Thermal Scanner Target Beam Visual */}
+      {cell.isThermalScanned && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0.3, 0.7, 0.3] }}
+          transition={{ repeat: Infinity, duration: 1, ease: "easeInOut" }}
+          className="absolute inset-0 bg-red-500/40 rounded-[3px] pointer-events-none z-20"
+        />
+      )}
 
         {/* Survivor Indicator */}
         {isRevealed && ((mode === 'god' && cell.hasSurvivor) || (mode === 'drone' && cell.isRescued)) && (

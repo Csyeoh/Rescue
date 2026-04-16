@@ -132,7 +132,7 @@ export const useWebSocket = ({
 
           setGrid((prevGrid) => {
             if (!prevGrid?.length) return prevGrid;
-            const next = prevGrid.map(row => row.map(cell => ({ ...cell, isIlluminated: false })));
+            const next = prevGrid.map(row => row.map(cell => ({ ...cell, isIlluminated: false, isThermalScanned: false })));
 
             for (const upd of map_updates) {
               const x = Number(upd.x);
@@ -148,11 +148,19 @@ export const useWebSocket = ({
               }
               
               cell.obstacleDiscovered = Boolean(upd.obstacle_discovered);
-              cell.thermal_aura = Boolean(upd.thermal_aura);
               cell.revealed = Boolean(upd.revealed);
               
               if (cell.revealed) {
                 discoveredRef.current.add(`${x},${y}`);
+              }
+            }
+
+            const thermalScans = Array.isArray(payload.thermal_scans) ? payload.thermal_scans : [];
+            for (const scanXY of thermalScans) {
+              const x = Number(scanXY.x);
+              const y = Number(scanXY.y);
+              if (x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE) {
+                next[y][x].isThermalScanned = true;
               }
             }
 

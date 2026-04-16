@@ -8,12 +8,11 @@ import db
 DB_PATH = "live_state.db"
 
 class CellAgent(Agent):
-    def __init__(self, unique_id, model, is_ob, t_type, is_thermal_aura = False):
+    def __init__(self, unique_id, model, is_ob, t_type):
         super().__init__(unique_id, model)
         self.is_obstacle = is_ob
         self.terrain_type = t_type
         self.obstacle_discovered = False
-        self.thermal_aura = is_thermal_aura
         self.revealed = False
         self.assigned_to = None
 
@@ -83,11 +82,6 @@ class DisasterZoneModel(Model):
             survivor = SurvivorAgent(f"s_{self.total_survivors}", self)
             self.grid.place_agent(survivor, (x, y))
             self.total_survivors += 1
-            for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
-                nx, ny = x+dx, y+dy
-                if 0 <= nx < 20 and 0 <= ny < 20:
-                    for obj in self.grid.get_cell_list_contents([(nx, ny)]):
-                        if isinstance(obj, CellAgent): obj.thermal_aura = True
         
         self.sync_to_db()
 
@@ -105,7 +99,7 @@ class DisasterZoneModel(Model):
         for contents, (x, y) in self.grid.coord_iter():
             for obj in contents:
                 if isinstance(obj, CellAgent):
-                    cell_data.append((x, y, int(obj.is_obstacle), int(obj.obstacle_discovered), obj.terrain_type, int(obj.thermal_aura), int(obj.revealed), obj.assigned_to))
+                    cell_data.append((x, y, int(obj.is_obstacle), int(obj.obstacle_discovered), obj.terrain_type, int(obj.revealed), obj.assigned_to))
                 elif isinstance(obj, SurvivorAgent):
                     survivor_data.append((obj.unique_id, x, y, int(obj.found)))
                     
@@ -117,23 +111,6 @@ class DisasterZoneModel(Model):
 
     def log_action(self, d_id, msg):
         self.mission_logs.append({"drone_id": d_id, "message": msg, "tick": self.tick_count})
-
-    def update_thermal_auras(self):
-        """Recalculates thermal auras based on unfound survivors."""
-        # Reset all cells
-        for contents, (x, y) in self.grid.coord_iter():
-            for obj in contents:
-                if isinstance(obj, CellAgent): obj.thermal_aura = False
-        
-        # Re-apply auras for unfound survivors
-        for contents, (x, y) in self.grid.coord_iter():
-            for obj in contents:
-                if isinstance(obj, SurvivorAgent) and not obj.found:
-                    for dx, dy in [(1,0),(-1,0),(0,1),(0,-1)]:
-                        nx, ny = x+dx, y+dy
-                        if 0 <= nx < 20 and 0 <= ny < 20:
-                            for c_obj in self.grid.get_cell_list_contents([(nx, ny)]):
-                                if isinstance(c_obj, CellAgent): c_obj.thermal_aura = True
 
     def step(self, batch_intents=None):
         if self.mission_complete or self.mission_failed: return
@@ -205,11 +182,9 @@ class DisasterZoneModel(Model):
                                     o.assigned_to = None # Clear assignment when revealed
                                     if o.is_obstacle: o.obstacle_discovered = True
                                 if isinstance(o, SurvivorAgent) and not o.found:
-                                    o.found = True; self.found_survivors += 1
+                                    o.found = True
+                                    self.found_survivors += 1
                                     self.log_action(d_id, f"Survivor found at ({ax}, {ay})!")
-                                    survivor_found_nearby = True
-                            if survivor_found_nearby:
-                                self.update_thermal_auras()
 
         self.schedule.step()
         
