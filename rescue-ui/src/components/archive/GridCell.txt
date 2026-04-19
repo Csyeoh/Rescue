@@ -1,14 +1,13 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { GridCell, EntityType, DisasterType, DroneStatus } from '../../types';
+import { GridCell, EntityType, DisasterType } from '../../types';
 
 interface GridCellProps {
   cell: GridCell;
   mode: 'god' | 'drone';
-  dronesHere?: DroneStatus[];
 }
 
-export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, dronesHere }) => {
+export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode }) => {
   const isRevealed = mode === 'god' || cell.revealed;
   const effectiveType: EntityType =
     mode === 'drone' && cell.type === 'obstacle' && !cell.obstacleDiscovered ? 'empty' : cell.type;
@@ -50,18 +49,7 @@ export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, dronesH
               <span className="text-white/40 font-bold capitalize">Position</span>
               <span className="font-mono text-azure-pale">{cell.x}, {cell.y}</span>
             </div>
-            {dronesHere && dronesHere.length > 0 && (
-              <div className="flex flex-col gap-1 border-t border-white/5 pt-1">
-                <span className="text-white/40 font-bold capitalize text-[10px]">Active Swarm</span>
-                <div className="flex flex-wrap gap-1 max-w-[120px]">
-                  {dronesHere.map(d => (
-                    <span key={d.id} className="font-mono text-blue-400 text-[9px] bg-blue-400/10 px-1 rounded">
-                      {d.id}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
+
           </motion.div>
           {cell.y >= 5 && <div className="w-2 h-2 bg-neutral-dark rotate-45 -mt-1 border-r border-b border-white/10"></div>}
         </div>
@@ -80,30 +68,9 @@ export const GridCellComponent: React.FC<GridCellProps> = ({ cell, mode, dronesH
         />
       )}
 
-        {/* Survivor Indicator */}
-        {isRevealed && ((mode === 'god' && cell.hasSurvivor) || (mode === 'drone' && cell.isRescued)) && (
-          <motion.div 
-            animate={{ 
-              opacity: [0.6, 1, 0.6], 
-              scale: cell.isRescued ? [1, 1.4, 1] : [0.8, 1.2, 0.8] 
-            }}
-            transition={{ repeat: Infinity, duration: 1.5 }}
-            className={`w-2 h-2 rounded-full shadow-lg shrink-0 ${
-              cell.isRescued 
-                ? 'bg-emerald-500 shadow-emerald-500/50' 
-                : 'bg-alert-yellow shadow-alert-yellow/50'
-            }`}
-          />
-        )}
 
-        {/* Drone Indicator (Bright Blue Dot) - Single dot representing one or more drones */}
-        {dronesHere && dronesHere.length > 0 && (
-          <motion.div
-            animate={{ scale: [1, 1.4, 1] }}
-            transition={{ repeat: Infinity, duration: 0.8 }}
-            className="w-2 h-2 bg-blue-400 rounded-full shadow-[0_0_12px_#60a5fa] shrink-0"
-          />
-        )}
+
+        {/* Drone Indicator removed — drones are now an absolute overlay in MapContainer */}
       </div>
 
       {/* Base Station Highlight */}

@@ -123,10 +123,10 @@ export const MissionLogPanel: React.FC<MissionLogPanelProps> = ({
                         <pre className="text-white/70 whitespace-pre-wrap">{JSON.stringify(log.details.tool_args, null, 2)}</pre>
                       </div>
                     )}
-                    {log.details.result && (
+                    {log.details.result != null && (
                       <div>
                         <span className="text-white/40 font-semibold text-[10px] uppercase">Result</span>
-                        <pre className="text-white/70 whitespace-pre-wrap">{typeof log.details.result === 'string' ? log.details.result : JSON.stringify(log.details.result, null, 2)}</pre>
+                        <pre className="text-white/70 whitespace-pre-wrap">{typeof log.details.result === 'string' ? log.details.result : JSON.stringify(log.details.result as unknown, null, 2)}</pre>
                       </div>
                     )}
                   </div>

@@ -20,35 +20,39 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+num_drones = 3
+initial_drone_battery = 100
+
 class SimulationConfig(BaseModel):
-    scenario: str = ""
-    num_drones: int = 2
-    drone_battery: int = 100
-    num_survivors: int = 5
-    obstacle_difficulty: str = "med"
-    map_data: Optional[Dict[str, Any]] = None
+    pass
 
 @app.post("/api/generate_map")
-def generate_map(config: SimulationConfig):
+def generate_map():
     import map_generator
     try:
-        blueprint, cells = map_generator.parse_ascii_map("map.txt")
-        map_data = {
-            "blueprint": blueprint.model_dump() if hasattr(blueprint, 'model_dump') else blueprint.dict(),
-            "cells": cells,
-            "survivors": [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in blueprint.survivors]
-        }
-        return {"status": "success", "message": "Map strictly generated via static ascii txt.", "map_data": map_data}
+        map_data = map_generator.parse_ascii_map("map.txt")
+        return {"status": "success", "message": "Map generated", "map_data": map_data, "num_drones": num_drones}
     except Exception as e:
         import traceback
         traceback.print_exc()
         return {"status": "error", "message": f"Failed to parse map.txt: {str(e)}"}
 
 @app.post("/api/start_mission")
-def start_mission(config: SimulationConfig):
-    config_dict = config.model_dump() if hasattr(config, 'model_dump') else config.dict()
-    print(f"Starting mission with config: {config_dict}")
-    simulation.initialize_world(config_dict)
+def start_mission():
+    import map_generator
+    try:
+        map_data = map_generator.parse_ascii_map("map.txt")
+        config_dict = {
+            "num_drones": num_drones, 
+            "drone_battery": initial_drone_battery,
+            "map_data": map_data
+        }
+        simulation.initialize_world(config_dict)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {"status": "error", "message": f"Failed to initialize world: {str(e)}"}
+
     import threading
     def run_flow():
         from swarm_flow.main import kickoff
@@ -72,10 +76,21 @@ def abort_mission():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    await websocket_manager.manager.connect(websocket)
     try:
-        await asyncio.sleep(0.1)
+        await websocket.accept()
+    except Exception as e:
+        print(f"[WS] Handshake failed: {e}")
+        return
+
+    websocket_manager.manager.active_connections.append(websocket)
+    print(f"[WS] Client connected. Active={len(websocket_manager.manager.active_connections)}")
+
+    try:
         while True:
-            await asyncio.sleep(10) 
-    except WebSocketDisconnect:
+            # receive() handles text, bytes, ping/pong, and close frames.
+            # It will raise WebSocketDisconnect when the client disconnects.
+            await websocket.receive()
+    except (WebSocketDisconnect, Exception):
+        pass
+    finally:
         websocket_manager.manager.disconnect(websocket)

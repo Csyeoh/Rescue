@@ -4,14 +4,15 @@ import time
 import os
 
 def start_services():
-    print("🚀 Booting Swarm Control Nexus...")
+    print(">> Booting Swarm Control Nexus...")
     processes = []
 
     try:
         # 1. Start the FastAPI Backend (Simulation & Database API)
         print("--> Starting Python Simulation Backend (Port 8000)...")
         backend_process = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "api:app", "--port", "8000", "--log-level", "info"]
+            [sys.executable, "-m", "uvicorn", "api:app", "--port", "8000", "--log-level", "info", "--ws", "wsproto"],
+            cwd=os.path.dirname(os.path.abspath(__file__))
         )
         processes.append(backend_process)
 
@@ -37,7 +38,7 @@ def start_services():
             time.sleep(1)
 
     except KeyboardInterrupt:
-        print("\n🛑 Shutting down Swarm Control Nexus...")
+        print("\n>> Shutting down Swarm Control Nexus...")
         for p in processes:
             p.terminate()  # Kills the background servers cleanly
             p.wait()       # Waits for them to fully close before exiting

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Settings, Sliders, Users, Drone, ShieldAlert, Waves, Activity, Droplets, Map as MapIcon, RefreshCcw, Download } from 'lucide-react';
+import { Settings, Sliders, Drone, Map as MapIcon, RefreshCcw, Download } from 'lucide-react';
 import { MissionConfig } from '../../types';
 import { ConfigRow } from '../Config/ConfigPage';
 
@@ -8,16 +8,13 @@ interface SidebarConfigProps {
   config: MissionConfig;
   isGenerating: boolean;
   onEditConfig: () => void;
-  onGenerateMap: () => void;
   onResetSimulation: () => void;
   onDownloadLogs: () => void;
 }
 
 export const SidebarConfig: React.FC<SidebarConfigProps> = ({
   config,
-  isGenerating,
   onEditConfig,
-  onGenerateMap,
   onResetSimulation,
   onDownloadLogs
 }) => {
@@ -44,81 +41,12 @@ export const SidebarConfig: React.FC<SidebarConfigProps> = ({
           <div className="space-y-3">
             <h3 className="text-[12px] font-bold text-azure-mid/60 tracking-widest border-b border-azure-pale pb-1">Current Configuration</h3>
             <div className="space-y-1">
-              <ConfigRow label="Scenario" icon={<MapIcon size={16} />} value={config.scenario} />
-              <ConfigRow label="Survivors" icon={<Users size={16} />} value={config.survivors} />
               <ConfigRow label="Swarm size" icon={<Drone size={16} />} value={config.droneCount} />
-              <ConfigRow label="Obstacles" icon={<ShieldAlert size={16} />} value={config.obstacleDensity} />
-              <ConfigRow label="Disaster" icon={<Waves size={16} />} value={config.disasterType} />
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-[12px] font-bold text-azure-mid/60 tracking-widest border-b border-azure-pale pb-1">Environmental Unknowns</h3>
-            <div className="space-y-1">
-              {config.disasterType === 'typhoon' && (
-                <>
-                  <ConfigRow label="Wind speed" icon={<Activity size={16} />} value={`${config.windSpeed} km/h`} />
-                  <ConfigRow label="Direction" icon={<Activity size={16} />} value={config.windDirection} />
-                  <ConfigRow label="Rainfall" icon={<Droplets size={16} />} value={`${config.rainfall} mm/h`} />
-                </>
-              )}
-              {config.disasterType === 'earthquake' && (
-                <>
-                  <ConfigRow label="Aftershock" icon={<Activity size={16} />} value={`${config.aftershockProb}%`} />
-                  <ConfigRow label="Collapse risk" icon={<ShieldAlert size={16} />} value={`${config.collapseRisk}%`} />
-                </>
-              )}
-              {config.disasterType === 'tsunami' && (
-                <>
-                  <ConfigRow label="Flow velocity" icon={<Waves size={16} />} value={`${config.waterFlow} m/s`} />
-                  <ConfigRow label="Water level" icon={<Droplets size={16} />} value={`${config.waterLevel} m`} />
-                </>
-              )}
-              {config.disasterType === 'fire' && (
-                <>
-                  <ConfigRow label="Spread rate" icon={<Activity size={16} />} value={`${config.fireSpread} m/min`} />
-                  <ConfigRow label="Smoke density" icon={<Activity size={16} />} value={`${config.smokeDensity}%`} />
-                </>
-              )}
-              {config.disasterType === 'flash_flood' && (
-                <>
-                  <ConfigRow label="Rising speed" icon={<Droplets size={16} />} value={`${config.risingSpeed} m/h`} />
-                  <ConfigRow label="Water level" icon={<Droplets size={16} />} value={`${config.waterLevel} m`} />
-                </>
-              )}
-              {config.disasterType === 'default' && (
-                <div className="text-[12px] font-medium text-azure-mid italic py-2">No active unknowns</div>
-              )}
+              <ConfigRow label="Layout" icon={<MapIcon size={16} />} value="Static (map.txt)" />
             </div>
           </div>
 
           <div className="pt-4 space-y-2 border-t border-azure-pale">
-            <motion.button
-              whileHover={!isGenerating ? { x: 3 } : {}}
-              whileTap={!isGenerating ? { scale: 0.98 } : {}}
-              onClick={onGenerateMap}
-              disabled={isGenerating}
-              className={`w-full flex items-center justify-center gap-2 bg-azure-dark text-white py-3 rounded-xl font-bold text-xs shadow-lg shadow-azure-dark/10 transition-all ${isGenerating ? 'opacity-80 cursor-wait' : 'hover:bg-azure-dark/90'}`}
-            >
-              {isGenerating ? (
-                <>
-                  <RefreshCcw size={14} className="animate-spin" />
-                  <motion.span
-                    animate={{ opacity: [0.4, 1, 0.4] }}
-                    transition={{ repeat: Infinity, duration: 1.5 }}
-                  >
-                    Generating...
-                  </motion.span>
-                </>
-              ) : (
-                <>
-                  <MapIcon size={14} />
-                  <span>Generate map</span>
-                </>
-              )}
-            </motion.button>
-
-
             <motion.button
               whileHover={{ x: 3 }}
               whileTap={{ scale: 0.98 }}
@@ -144,4 +72,3 @@ export const SidebarConfig: React.FC<SidebarConfigProps> = ({
     </aside>
   );
 };
-

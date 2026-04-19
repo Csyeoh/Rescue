@@ -11,44 +11,113 @@ def init_db():
     
     conn = get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE drones (id TEXT PRIMARY KEY, x INTEGER, y INTEGER, battery INTEGER, status TEXT, is_destroyed INTEGER, thermal_memory TEXT, assigned_cells TEXT, target_x INTEGER, target_y INTEGER)")
-    cursor.execute("CREATE TABLE cells (x INTEGER, y INTEGER, is_obstacle INTEGER, obstacle_discovered INTEGER, terrain_type TEXT, revealed INTEGER, assigned_to TEXT, PRIMARY KEY(x,y))")
-    cursor.execute("CREATE TABLE survivors (id TEXT PRIMARY KEY, x INTEGER, y INTEGER, found INTEGER)")
-    cursor.execute("CREATE TABLE mission_state (id INTEGER PRIMARY KEY, tick_count INTEGER, complete INTEGER, failed INTEGER, total_survivors INTEGER, found_survivors INTEGER)")
-    cursor.execute("CREATE TABLE thermal_scans (id INTEGER PRIMARY KEY AUTOINCREMENT, cells_json TEXT, timestamp REAL)")
-    cursor.execute("INSERT INTO mission_state (id, tick_count, complete, failed, total_survivors, found_survivors) VALUES (1, 0, 0, 0, 0, 0)")
+
+    # Drones: float x/y, assigned_sector replaces assigned_cells
+    cursor.execute("""
+        CREATE TABLE drones (
+            id TEXT PRIMARY KEY,
+            x REAL, y REAL,
+            battery INTEGER,
+            status TEXT,
+            is_destroyed INTEGER,
+            thermal_memory TEXT,
+            assigned_sector TEXT
+        )
+    """)
+
+    # Static terrain obstacles (impassable rubble/collapse)
+    cursor.execute("""
+        CREATE TABLE obstacles (
+            id TEXT PRIMARY KEY,
+            x REAL, y REAL,
+            discovered INTEGER DEFAULT 0
+        )
+    """)
+
+    # Buildings (individual searchable tiles)
+    cursor.execute("""
+        CREATE TABLE buildings (
+            id TEXT PRIMARY KEY,
+            x REAL, y REAL,
+            revealed INTEGER DEFAULT 0
+        )
+    """)
+
+    # Precomputed Building Clusters
+    cursor.execute("""
+        CREATE TABLE building_clusters (
+            id TEXT PRIMARY KEY,
+            cx REAL, cy REAL,
+            revealed INTEGER DEFAULT 0,
+            tile_count INTEGER
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE survivors (
+            id TEXT PRIMARY KEY,
+            x REAL, y REAL,
+            found INTEGER
+        )
+    """)
+
+    # Removing mission_state table as it is dynamically aggregated now
+
+    cursor.execute("""
+        CREATE TABLE thermal_scans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cells_json TEXT,
+            timestamp REAL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
 def get_db_conn():
-    # If the file doesn't exist, this will create it
     conn = sqlite3.connect(DB_PATH, timeout=20.0)
-    # Enable Write-Ahead Logging to allow concurrent read/writes (solves "database is locked" errors)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
-def sync_world_state(drone_data, cell_data, survivor_data, mission_data):
+def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_data, survivor_data):
     """
-    Performs a high-performance batch insert/update for the entire simulation state.
+    Batch upsert for the entire simulation state.
+    drone_data:    [(id, x, y, battery, status, is_destroyed, thermal_memory, assigned_sector), ...]
+    obstacle_data: [(id, x, y, discovered), ...]
+    building_data: [(id, x, y, revealed), ...]
+    building_cluster_data: [(id, cx, cy, revealed, tile_count), ...]
+    survivor_data: [(id, x, y, found), ...]
     """
     conn = get_db_conn()
     cursor = conn.cursor()
-    
+
     try:
-        # We wrap in a transaction implicitly by using executemany then commit
         if drone_data:
-            cursor.executemany("INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?,NULL,NULL)", drone_data)
-        
-        if cell_data:
-            cursor.executemany("INSERT OR REPLACE INTO cells VALUES (?,?,?,?,?,?,?)", cell_data)
-        
+            cursor.executemany(
+                "INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?)",
+                drone_data
+            )
+        if obstacle_data:
+            cursor.executemany(
+                "INSERT OR REPLACE INTO obstacles VALUES (?,?,?,?)",
+                obstacle_data
+            )
+        if building_data:
+            cursor.executemany(
+                "INSERT OR REPLACE INTO buildings VALUES (?,?,?,?)",
+                building_data
+            )
+        if building_cluster_data:
+            cursor.executemany(
+                "INSERT OR REPLACE INTO building_clusters VALUES (?,?,?,?,?)",
+                building_cluster_data
+            )
         if survivor_data:
-            cursor.executemany("INSERT OR REPLACE INTO survivors VALUES (?,?,?,?)", survivor_data)
-        
-        if mission_data:
-            cursor.execute("UPDATE mission_state SET tick_count=?, complete=?, failed=?, total_survivors=?, found_survivors=? WHERE id=1", mission_data)
-            
+            cursor.executemany(
+                "INSERT OR REPLACE INTO survivors VALUES (?,?,?,?)",
+                survivor_data
+            )
         conn.commit()
     finally:
         conn.close()

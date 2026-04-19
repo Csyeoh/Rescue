@@ -1,14 +1,12 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { ShieldAlert, Play, Square, Radio } from 'lucide-react';
-import { DisasterType } from '../../types';
 import { GRID_SIZE } from '../../constants';
 
 interface HeaderProps {
   revealedCells: number;
   survivorsDetected: number;
   totalSurvivors: number;
-  disasterType: DisasterType;
   isSimulationRunning: boolean;
   isAborting: boolean;
   isMapGenerated: boolean;
@@ -19,7 +17,6 @@ export const Header: React.FC<HeaderProps> = ({
   revealedCells,
   survivorsDetected,
   totalSurvivors,
-  disasterType,
   isSimulationRunning,
   isAborting,
   isMapGenerated,

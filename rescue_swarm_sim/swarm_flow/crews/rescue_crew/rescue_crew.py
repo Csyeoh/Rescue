@@ -6,13 +6,13 @@ import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 
 from pathlib import Path
-from typing import Optional, List
+from typing import List
 from pydantic import BaseModel, Field
 from google.adk import Agent
 from google.adk.agents.parallel_agent import ParallelAgent
 from google.adk.tools.mcp_tool import McpToolset, StdioConnectionParams
 from google.adk.models import LiteLlm
-from google.adk.planners import PlanReActPlanner, BuiltInPlanner
+from google.adk.planners import BuiltInPlanner
 from google.genai import types
 from mcp.client.stdio import StdioServerParameters
 from dotenv import load_dotenv
@@ -20,15 +20,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class DroneIntent(BaseModel):
-    drone_id: str = Field(..., description="The ID of the drone")
-    x: Optional[int] = Field(None, description="Target X coordinate for move")
-    y: Optional[int] = Field(None, description="Target Y coordinate for move")
-    status: str = Field(..., description="The new status of the drone (SEARCHING, IDLE, RETURNING, CHARGING)")
-    # plan: str = Field("", description="Overall goal and strategy")
-    # reasoning: str = Field("", description="Analysis of the current state")
-    # user_summary: str = Field("", description="A short, 1-sentence summary for the user UI")
-
-
+    drone_id: str  = Field(..., description="The ID of the drone")
+    dx: float      = Field(0.0, description="Movement delta X (-1.0 to 1.0). Combined magnitude with dy must be ≤ 1.0.")
+    dy: float      = Field(0.0, description="Movement delta Y (-1.0 to 1.0). Combined magnitude with dx must be ≤ 1.0.")
+    status: str    = Field(..., description="The new status of the drone (SEARCHING, IDLE, RETURNING, CHARGING)")
 
 class RescueCrew:
     def __init__(self):
