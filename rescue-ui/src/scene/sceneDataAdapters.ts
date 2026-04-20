@@ -6,7 +6,7 @@
  * and decoupled from the rendering engine.
  */
 
-import { EnvironmentState, SurvivorPoint } from '../types';
+import { EnvironmentState, SurvivorPoint, ThermalZone } from '../types';
 import { clusterTiles, traceBoundaryPaths } from '../utils/polygon-utils';
 
 // ---------------------------------------------------------------------------
@@ -56,10 +56,28 @@ export function envToSurvivors(env: EnvironmentState): SurvivorPoint[] {
 // Thermal scans
 // ---------------------------------------------------------------------------
 
-export function envToThermalPoints(env: EnvironmentState): { position: [number, number, number] }[] {
-  return (env?.thermalScans || []).map(t => ({
-    position: [Math.floor(t.x) + 0.5, Math.floor(t.y) + 0.5, 0.05] as [number, number, number],
-  }));
+export function envToThermalPolygons(env: EnvironmentState): ThermalZone[] {
+  return (env?.thermalScans || []).map((t, idx) => {
+    const coords: number[][] = [[t.cx, t.cy, 1.1]];
+    const startAngle = t.angle - t.arc / 2;
+    const endAngle = t.angle + t.arc / 2;
+    const segments = 16; 
+    
+    for (let i = 0; i <= segments; i++) {
+        const rayAngle = startAngle + (i / segments) * t.arc;
+        const rad = (rayAngle * Math.PI) / 180;
+        const x = t.cx + Math.sin(rad) * t.radius;
+        const y = t.cy + Math.cos(rad) * t.radius;
+        coords.push([x, y, 1.1]);
+    }
+    
+    coords.push([t.cx, t.cy, 1.1]);
+    return {
+      id: `thermal-${idx}`,
+      polygon: coords,
+      createdAt: t.createdAt || Date.now()
+    };
+  });
 }
 
 export type { BuildingPoly };

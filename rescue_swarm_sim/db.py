@@ -61,8 +61,6 @@ def init_db():
         )
     """)
 
-    # Removing mission_state table as it is dynamically aggregated now
-
     cursor.execute("""
         CREATE TABLE thermal_scans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,6 +68,22 @@ def init_db():
             timestamp REAL
         )
     """)
+
+    # Coverage Grid: 40x40 cells (0.5 unit res) covering 20x20 space
+    cursor.execute("""
+        CREATE TABLE coverage (
+            x_idx INTEGER,
+            y_idx INTEGER,
+            revealed INTEGER DEFAULT 0,
+            PRIMARY KEY (x_idx, y_idx)
+        )
+    """)
+    # Initialize grid
+    cells = []
+    for ix in range(40):
+        for iy in range(40):
+            cells.append((ix, iy, 0))
+    cursor.executemany("INSERT INTO coverage (x_idx, y_idx, revealed) VALUES (?,?,?)", cells)
 
     conn.commit()
     conn.close()
@@ -121,3 +135,29 @@ def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_
         conn.commit()
     finally:
         conn.close()
+
+def sync_coverage(revealed_indices):
+    """
+    revealed_indices: list of (ix, iy) tuples that are now revealed.
+    """
+    if not revealed_indices:
+        return
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.executemany(
+            "UPDATE coverage SET revealed=1 WHERE x_idx=? AND y_idx=?",
+            revealed_indices
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_revealed_coverage():
+    """Returns list of (ix, iy) for all revealed cells."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT x_idx, y_idx FROM coverage WHERE revealed=1")
+    rows = cursor.fetchall()
+    conn.close()
+    return rows

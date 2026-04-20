@@ -79,27 +79,34 @@ class SwarmCombinedFlow:
                 if event.content and event.author not in ["user", "tool"]:
                     author = event.author or agent.name
                     content_parts = []
+                    thought_text = ""
                     parts = getattr(event.content, "parts", []) or []
                     
                     for p in parts:
                         if hasattr(p, "text") and p.text: content_parts.append(p.text)
-                        if hasattr(p, "thought") and p.thought: content_parts.append(f"\n[THOUGHT: {p.thought}]\n")
+                        if hasattr(p, "thought") and p.thought:
+                            content_parts.append(f"\n[THOUGHT: {p.thought}]\n")
                     
                     if content_parts:
                         full_content = "".join(content_parts)
                         
-                        # Simple Summary Extraction
+                        # Extract summary (from SUMMARY: line)
                         import re
                         summary_match = re.search(r"(?i)SUMMARY:\s*(.*)", full_content)
                         user_summary = summary_match.group(1).strip() if summary_match else full_content.split('\n')[0][:150]
 
-                        # Log everything to the routed file
+                        # Extract thought sentence (text after [THOUGHT: True] up to SUMMARY:)
+                        thought_match = re.search(r"\[THOUGHT:\s*True\]\s*\n(.*?)(?:\nSUMMARY:|\Z)", full_content, re.DOTALL)
+                        thought_text = thought_match.group(1).strip() if thought_match else ""
+
+                        # Log full reasoning to file only (for download)
                         self.log_to_file(f"REASONING ({author}):\n{full_content}", target=log_target)
                         
-                        websocket_manager.send_to_ui("agent_reasoning_completed", {
-                            "agent_role": agent.description or agent.name,
-                            "plan": user_summary,
-                            "ready": event.is_final_response()
+                        # Broadcast lightweight data to UI
+                        websocket_manager.send_to_ui("agent_reasoning", {
+                            "agent": (event.author or agent.name).upper(),
+                            "summary": user_summary,
+                            "thought": thought_text,
                         })
                         if event.is_final_response(): final_text = full_content
 
@@ -108,8 +115,37 @@ class SwarmCombinedFlow:
                 if calls:
                     for call in calls:
                         self.log_to_file(f"TOOL CALL ({event.author or agent.name}): {call.name}({json.dumps(call.args)})", target=log_target)
-                        websocket_manager.send_to_ui("mcp_tool_execution_completed", {
-                            "tool_name": call.name, "tool_args": call.args, "result": "Executing...", "execution_duration_ms": 0
+                        
+                        clean_tool_name = call.name.split("__")[-1] if "__" in call.name else call.name
+                        
+                        # Early broadcast for thermal scan visualization
+                        if clean_tool_name == "thermal_scan":
+                            try:
+                                d_id = call.args.get("drone_id")
+                                angle = call.args.get("angle_deg", 0)
+                                
+                                # Resolve actual drone position from simulation
+                                cx, cy = 9.5, 9.5
+                                if simulation.sim_world:
+                                    for a in simulation.sim_world.schedule.agents:
+                                        if getattr(a, 'unique_id', None) == d_id:
+                                            cx, cy = a.pos
+                                            break
+                                
+                                websocket_manager.send_to_ui("thermal_scan_event", {
+                                    "cx": round(float(cx), 2),
+                                    "cy": round(float(cy), 2),
+                                    "angle": float(angle),
+                                    "arc": 60.0,
+                                    "radius": 6.0
+                                })
+                            except Exception as e:
+                                self.log_to_file(f"ERROR: Failed early thermal broadcast: {e}")
+
+                        websocket_manager.send_to_ui("tool_call", {
+                            "agent": (event.author or agent.name).upper(),
+                            "tool_name": clean_tool_name,
+                            "tool_args": call.args if call.args else {},
                         })
 
                 # 3. Capture Tool Responses
@@ -117,8 +153,37 @@ class SwarmCombinedFlow:
                 if responses:
                     for resp in responses:
                         self.log_to_file(f"TOOL RESPONSE ({event.author or agent.name}): {resp.name} -> {resp.response}", target=log_target)
-                        websocket_manager.send_to_ui("mcp_tool_execution_completed", {
-                            "tool_name": resp.name, "tool_args": {}, "result": str(resp.response), "execution_duration_ms": 0
+                        
+                        raw = resp.response
+                        result_message = str(raw)
+                        
+                        # The MCP response might have our dict encoded as a JSON string under content > text,
+                        # or it might be raw dictionary, or it might be in structuredContent.
+                        if isinstance(raw, dict):
+                            # Try structuredContent first
+                            sc = raw.get("structuredContent", {})
+                            if isinstance(sc, dict) and "summary" in sc:
+                                result_message = str(sc["summary"])
+                            else:
+                                content_list = raw.get("content", [])
+                                if isinstance(content_list, list) and len(content_list) > 0:
+                                    text_val = content_list[0].get("text", "")
+                                    try:
+                                        parsed = json.loads(text_val)
+                                        if isinstance(parsed, dict) and "summary" in parsed:
+                                            result_message = str(parsed["summary"])
+                                        else:
+                                            result_message = text_val
+                                    except Exception:
+                                        result_message = text_val
+                                        
+                        # Strip any namespacing from tool name (e.g. DispacherSwarm__tool -> tool)
+                        clean_tool_name = resp.name.split("__")[-1] if "__" in resp.name else resp.name
+                                        
+                        websocket_manager.send_to_ui("tool_response", {
+                            "agent": (event.author or agent.name).upper(),
+                            "tool_name": clean_tool_name,
+                            "result_message": result_message,
                         })
 
             await runner.close()
@@ -180,50 +245,54 @@ class SwarmCombinedFlow:
         websocket_manager.send_to_ui("dispatcher_update", dispatcher_state)
 
         # 2. Execution Phase: PARALLEL Drone Execution
-        # self.log_to_file(f"PHASE: Execution - Running {len(drones)} drone agents via ParallelAgent...")
+        self.log_to_file(f"PHASE: Execution - Running {len(drones)} drone agents via ParallelAgent...")
         
-        # drone_ids = [d.unique_id for d in drones]
+        drone_ids = [d.unique_id for d in drones]
         
-        # # Run agents automatically using the ParallelAgent
-        # parallel_agent = self.rescue_crew.get_parallel_pilot_agent(drone_ids)
-        # await self.run_agent(parallel_agent, f"Determine your next tactical move.", session_id="mission_drones_parallel")
+        # Run agents automatically using the ParallelAgent
+        parallel_agent = self.rescue_crew.get_parallel_pilot_agent(drone_ids)
+        await self.run_agent(parallel_agent, f"Determine your next tactical move.", session_id="mission_drones_parallel")
                 
-        # # Extract individual intents from ParallelAgent session state
-        # batch_intents = {}
+        # Extract individual intents from ParallelAgent session state
+        batch_intents = {}
         
-        # session = await self.session_service.get_session(app_name="rescue_swarm", user_id="swarm_commander", session_id="mission_drones_parallel")
-        # for d_id in drone_ids:
-        #     intent_data = session.state.get(f"raw_intent_{d_id}") if session else None
+        session = await self.session_service.get_session(app_name="rescue_swarm", user_id="swarm_commander", session_id="mission_drones_parallel")
+        for d_id in drone_ids:
+            intent_data = session.state.get(f"raw_intent_{d_id}") if session else None
             
-        #     if intent_data:
-        #         try:
-        #             if isinstance(intent_data, str):
-        #                 intent_obj = json.loads(intent_data)
-        #             elif hasattr(intent_data, "model_dump"): # Handle pydantic object
-        #                 intent_obj = intent_data.model_dump()
-        #             elif isinstance(intent_data, dict):
-        #                 intent_obj = intent_data
-        #             else:
-        #                 intent_obj = dict(intent_data)
+            if intent_data:
+                try:
+                    if isinstance(intent_data, str):
+                        intent_obj = json.loads(intent_data)
+                    elif hasattr(intent_data, "model_dump"): # Handle pydantic object
+                        intent_obj = intent_data.model_dump()
+                    elif isinstance(intent_data, dict):
+                        intent_obj = intent_data
+                    else:
+                        intent_obj = dict(intent_data)
                     
-        #             if "drone_id" not in intent_obj:
-        #                  intent_obj["drone_id"] = d_id
-        #             batch_intents[d_id] = intent_obj
-        #         except Exception as e:
-        #             self.log_to_file(f"[ERROR] Failed to parse intent for {d_id}: {e}")
-        #     else:
-        #         self.log_to_file(f"[WARNING] No intent found in session state for {d_id}.")
+                    if "drone_id" not in intent_obj:
+                         intent_obj["drone_id"] = d_id
+                    batch_intents[d_id] = intent_obj
+                except Exception as e:
+                    self.log_to_file(f"[ERROR] Failed to parse intent for {d_id}: {e}")
+            else:
+                self.log_to_file(f"[WARNING] No intent found in session state for {d_id}.")
 
-        # # 3. Physics Step
-        # self.log_to_file(f"PHASE: Physics - Applying {len(batch_intents)} drone intents.")
-        # simulation.sim_world.step(batch_intents)
+        # 3. Physics Step
+        self.log_to_file(f"PHASE: Physics - Applying {len(batch_intents)} drone intents.")
+        simulation.sim_world.step(batch_intents)
         
-        # # 4. UI Update
-        # from .tools.state_reader import get_current_map_state
-        # state = get_current_map_state()
-        # websocket_manager.send_to_ui("tick_update", state)
+        # 4. UI Update
+        from .tools.state_reader import get_current_map_state, get_coverage_state
+        state = get_current_map_state()
+        websocket_manager.send_to_ui("tick_update", state)
         
-        # self.log_to_file(f"--- TICK {tick_count} COMPLETED (Duration: {time.time() - self.tick_start_time:.2f}s) ---")
+        # Dedicated coverage update (Fog of War)
+        coverage = get_coverage_state()
+        websocket_manager.send_to_ui("coverage_update", coverage)
+        
+        self.log_to_file(f"--- TICK {tick_count} COMPLETED (Duration: {time.time() - self.tick_start_time:.2f}s) ---")
 
 def kickoff():
     flow = SwarmCombinedFlow()

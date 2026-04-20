@@ -1,1 +1,0 @@
-Explain the causes of INFO: connection rejected (400 Bad Request) for websockets in fastapi/uvicorn

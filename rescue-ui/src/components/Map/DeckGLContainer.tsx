@@ -10,7 +10,7 @@ import {
   envToBuildings,
   envToObstacles,
   envToSurvivors,
-  envToThermalPoints,
+  envToThermalPolygons,
 } from '../../scene/sceneDataAdapters';
 import {
   createBuildingLayer,
@@ -22,6 +22,7 @@ import {
   createBaseLayer,
   createGroundLayer,
   createSectorLayer,
+  createCoverageLayer,
 } from '../../scene/layers';
 
 // ---------------------------------------------------------------------------
@@ -31,6 +32,7 @@ import {
 interface DeckGLContainerProps {
   environmentState: EnvironmentState;
   drones: DroneStatus[];
+  coverage: {x: number, y: number}[];
   mode: 'god' | 'drone';
   showCoords: boolean;
   isNightMode: boolean;
@@ -72,7 +74,7 @@ const THEMES = {
       charging: [199, 233, 192],
       returning: [176, 38, 255],
       idle: [199, 233, 192],
-      patrolling: [116, 196, 118]
+      searching: [116, 196, 118]
     },
     accent: [0, 90, 50],
     background: 'linear-gradient(160deg, #edf8e9 0%, #c7e9c0 100%)'
@@ -95,7 +97,7 @@ const THEMES = {
       charging: [244, 163, 88],
       returning: [176, 38, 255],
       idle: [244, 163, 88],
-      patrolling: [45, 168, 139]
+      searching: [45, 168, 139]
     },
     accent: [45, 168, 139],
     background: 'linear-gradient(160deg, #1e293b 0%, #0f172a 100%)'
@@ -111,6 +113,7 @@ const THEMES = {
 export default function DeckGLContainer({
   environmentState,
   drones,
+  coverage,
   mode,
   showCoords,
   isNightMode,
@@ -135,7 +138,7 @@ export default function DeckGLContainer({
   const buildingData = useMemo(() => envToBuildings(environmentState), [environmentState]);
   const obstacleData = useMemo(() => envToObstacles(environmentState, mode === 'god'), [environmentState, mode]);
   const survivorData = useMemo(() => envToSurvivors(environmentState), [environmentState]);
-  const thermalData = useMemo(() => envToThermalPoints(environmentState), [environmentState]);
+  const thermalData = useMemo(() => envToThermalPolygons(environmentState), [environmentState]);
 
   // ── Layer stack (bottom → top) ─────────────────────────────────────────
   const layers = useMemo(() => {
@@ -144,9 +147,12 @@ export default function DeckGLContainer({
     return [
       // 0. Base ground plane below everything
       ...createGroundLayer({ ground: theme.ground, grid: theme.grid }),
+      
+      // 0.5 Coverage layer (Fog of War)
+      createCoverageLayer(coverage),
 
       // 1. Transient scans and Survivors
-      createThermalLayer(thermalData),
+      createThermalLayer(thermalData, time),
       createSurvivorLayer(survivorData, theme.survivor),
 
       // 2. Static environment

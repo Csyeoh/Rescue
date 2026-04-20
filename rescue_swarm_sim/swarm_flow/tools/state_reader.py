@@ -5,7 +5,6 @@ import time
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 import simulation
-import db
 
 
 def get_current_map_state() -> dict:
@@ -62,23 +61,7 @@ def get_current_map_state() -> dict:
                 "discovered": agent.found,
             })
 
-    # ── Active thermal scans (last 5 seconds) ────────────────────────────────
-    scanned_cells = []
-    try:
-        conn = db.get_db_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT cells_json FROM thermal_scans WHERE timestamp > ?",
-            (time.time() - 5.0,)
-        )
-        for (cells_json,) in cursor.fetchall():
-            try:
-                scanned_cells.extend(json.loads(cells_json))
-            except Exception:
-                pass
-        conn.close()
-    except Exception:
-        pass
+    # Active thermal scans are now isolated to their own API endpoint.
 
     return {
         "grid": {"width": world.space.x_max, "height": world.space.y_max},
@@ -87,7 +70,6 @@ def get_current_map_state() -> dict:
         "drones": drones,
         "sectors": sectors,
         "survivors": survivors,
-        "thermal_scans": scanned_cells,
         "logs": world.mission_logs,
     }
 
@@ -131,3 +113,12 @@ def get_dispatcher_state() -> dict:
         "sectors": sectors,
     }
 
+def get_coverage_state() -> dict:
+    """
+    Returns only the coordinates (x_idx, y_idx) of cells that are revealed.
+    """
+    import db
+    cells = db.get_revealed_coverage()
+    return {
+        "cells": [[c[0], c[1]] for c in cells]
+    }

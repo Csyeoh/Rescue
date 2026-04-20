@@ -27,7 +27,7 @@ export const DroneCard: React.FC<DroneCardProps> = ({
 
   const getStatusColor = () => {
     switch (drone.status) {
-      case 'patrolling': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
+      case 'searching': return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
       case 'returning': return 'text-alert-orange bg-alert-orange/10 border-alert-orange/20';
       case 'charging': return 'text-alert-yellow bg-alert-yellow/10 border-alert-yellow/20';
       default: return 'text-white/40 bg-white/5 border-white/10';

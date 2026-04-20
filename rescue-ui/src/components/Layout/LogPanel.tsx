@@ -6,14 +6,21 @@ import {
   Terminal,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Trash2,
   Download,
   CheckCircle2,
   AlertTriangle,
   XCircle,
   Info,
+  Brain,
+  Wrench,
+  ArrowDownToLine,
   Wifi,
   WifiOff,
+  Filter,
+  FilterX,
 } from 'lucide-react';
 import { LogEntry } from '../../types';
 
@@ -24,7 +31,33 @@ interface LogPanelProps {
   isConnected?: boolean;
 }
 
+// ── Type config ─────────────────────────────────────────────────────────────
+
 const TYPE_CONFIG = {
+  reasoning: {
+    icon: Brain,
+    color: '#a78bfa',
+    bg: 'rgba(167,139,250,0.08)',
+    border: 'rgba(167,139,250,0.22)',
+    badge: 'bg-violet-500/15 text-violet-400 border border-violet-500/25',
+    label: 'THINK',
+  },
+  tool_call: {
+    icon: Wrench,
+    color: '#38bdf8',
+    bg: 'rgba(56,189,248,0.08)',
+    border: 'rgba(56,189,248,0.22)',
+    badge: 'bg-sky-500/15 text-sky-400 border border-sky-500/25',
+    label: 'CALL',
+  },
+  tool_response: {
+    icon: ArrowDownToLine,
+    color: '#36c55e',
+    bg: 'rgba(54,197,94,0.06)',
+    border: 'rgba(54,197,94,0.20)',
+    badge: 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25',
+    label: 'RESULT',
+  },
   success: {
     icon: CheckCircle2,
     color: '#36c55e',
@@ -59,15 +92,18 @@ const TYPE_CONFIG = {
   },
 };
 
+// ── Agent colors ────────────────────────────────────────────────────────────
+
 const AGENT_COLORS: Record<string, string> = {
   SYSTEM: '#6aa7ad',
   COMMAND: '#e8da8d',
   AGENT: '#a78bfa',
+  SWARM_DISPATCHER: '#a78bfa',
+  CENTRAL_COMMANDER: '#a78bfa',
 };
 
 function agentColor(agent: string): string {
   if (AGENT_COLORS[agent.toUpperCase()]) return AGENT_COLORS[agent.toUpperCase()];
-  // Drone IDs get a consistent hue derived from their index
   const hash = agent.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
   const hues = [200, 160, 280, 40, 320, 60, 180, 240];
   return `hsl(${hues[hash % hues.length]}, 70%, 65%)`;
@@ -75,14 +111,22 @@ function agentColor(agent: string): string {
 
 function formatAgent(agent: string): string {
   if (agent.startsWith('drone_')) return `Drone #${agent.split('_')[1]}`;
+  if (agent === 'SWARM_DISPATCHER') return 'Central Commander';
   return agent;
 }
+
+// ── Log Row ─────────────────────────────────────────────────────────────────
 
 const LogRow: React.FC<{ log: LogEntry; index: number }> = ({ log, index }) => {
   const [expanded, setExpanded] = useState(false);
   const cfg = TYPE_CONFIG[log.type] ?? TYPE_CONFIG.info;
   const Icon = cfg.icon;
-  const hasDetails = !!log.details;
+
+  // Determine if this row has expandable content
+  const hasExpandable =
+    (log.type === 'reasoning' && !!log.details?.thought) ||
+    (log.type === 'tool_call' && log.details?.tool_args && Object.keys(log.details.tool_args).length > 0) ||
+    (log.type === 'tool_response' && !!log.details?.result_message);
 
   return (
     <motion.div
@@ -92,9 +136,9 @@ const LogRow: React.FC<{ log: LogEntry; index: number }> = ({ log, index }) => {
       className="group"
     >
       <div
-        className={`relative rounded-lg border transition-all duration-150 ${hasDetails ? 'cursor-pointer' : ''}`}
+        className={`relative rounded-lg border transition-all duration-150 ${hasExpandable ? 'cursor-pointer' : ''}`}
         style={{ background: cfg.bg, borderColor: cfg.border }}
-        onClick={() => hasDetails && setExpanded((p) => !p)}
+        onClick={() => hasExpandable && setExpanded((p) => !p)}
       >
         {/* Left accent line */}
         <div
@@ -116,22 +160,42 @@ const LogRow: React.FC<{ log: LogEntry; index: number }> = ({ log, index }) => {
               >
                 {formatAgent(log.agent)}
               </span>
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-mono font-bold ${cfg.badge}`}>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold ${cfg.badge}`}>
                 {cfg.label}
               </span>
-              <span className="text-xs text-white/25 font-mono ml-auto shrink-0">
+              <span className="text-[11px] text-white/25 font-mono ml-auto shrink-0">
                 {log.timestamp}
               </span>
             </div>
 
-            {/* Message */}
-            <p className="text-sm text-white/70 mt-1 leading-relaxed break-words whitespace-pre-wrap font-mono">
-              {log.message}
-            </p>
+            {/* Message — type-specific rendering */}
+            {log.type === 'reasoning' && (
+              <p className="text-[13px] text-white/75 mt-1.5 leading-relaxed break-words">
+                {log.message}
+              </p>
+            )}
 
-            {/* Details (expandable) */}
+            {log.type === 'tool_call' && (
+              <p className="text-[13px] text-sky-300/80 mt-1.5 leading-relaxed break-words font-mono">
+                {log.message}
+              </p>
+            )}
+
+            {log.type === 'tool_response' && (
+              <p className="text-[13px] text-emerald-300/70 mt-1.5 leading-relaxed break-words">
+                {log.message.length > 120 ? log.message.slice(0, 120) + '…' : log.message}
+              </p>
+            )}
+
+            {!['reasoning', 'tool_call', 'tool_response'].includes(log.type) && (
+              <p className="text-[13px] text-white/60 mt-1 leading-relaxed break-words whitespace-pre-wrap font-mono">
+                {log.message}
+              </p>
+            )}
+
+            {/* Expandable details */}
             <AnimatePresence>
-              {expanded && log.details && (
+              {expanded && (
                 <motion.div
                   initial={{ height: 0, opacity: 0 }}
                   animate={{ height: 'auto', opacity: 1 }}
@@ -139,18 +203,53 @@ const LogRow: React.FC<{ log: LogEntry; index: number }> = ({ log, index }) => {
                   transition={{ duration: 0.2 }}
                   className="overflow-hidden"
                 >
-                  <pre className="mt-2 text-[13px] text-white/50 font-mono bg-black/30 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all border border-white/5">
-                    {JSON.stringify(log.details, null, 2)}
-                  </pre>
+                  {/* Reasoning → show thought */}
+                  {log.type === 'reasoning' && log.details?.thought && (
+                    <div
+                      className="mt-2 rounded-lg px-3 py-2.5 text-[13px] text-violet-300/80 leading-relaxed border-l-2 italic"
+                      style={{
+                        background: 'rgba(167,139,250,0.06)',
+                        borderColor: 'rgba(167,139,250,0.30)',
+                      }}
+                    >
+                      {log.details.thought}
+                    </div>
+                  )}
+
+                  {/* Tool call → show args as key=value rows */}
+                  {log.type === 'tool_call' && log.details?.tool_args && (
+                    <div
+                      className="mt-2 rounded-lg px-3 py-2 text-[12px] font-mono leading-relaxed space-y-0.5"
+                      style={{ background: 'rgba(56,189,248,0.06)' }}
+                    >
+                      {Object.entries(log.details.tool_args).map(([k, v]) => (
+                        <div key={k} className="flex gap-2">
+                          <span className="text-sky-400/60">{k}:</span>
+                          <span className="text-sky-300/90">{JSON.stringify(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Tool response → show full result message */}
+                  {log.type === 'tool_response' && log.details?.result_message && (
+                    <pre
+                      className="mt-2 rounded-lg px-3 py-2 text-[12px] font-mono text-emerald-300/70 leading-relaxed whitespace-pre-wrap break-all"
+                      style={{ background: 'rgba(54,197,94,0.06)' }}
+                    >
+                      {log.details.result_message}
+                    </pre>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
 
             {/* Expand hint */}
-            {hasDetails && (
-              <span className="text-xs text-white/25 mt-0.5 block">
-                {expanded ? '▲ collapse' : '▼ show details'}
-              </span>
+            {hasExpandable && (
+              <div className="flex items-center gap-1 mt-1 text-[11px] text-white/25">
+                {expanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+                <span>{expanded ? 'collapse' : 'show details'}</span>
+              </div>
             )}
           </div>
         </div>
@@ -158,6 +257,8 @@ const LogRow: React.FC<{ log: LogEntry; index: number }> = ({ log, index }) => {
     </motion.div>
   );
 };
+
+// ── Panel ───────────────────────────────────────────────────────────────────
 
 export const LogPanel: React.FC<LogPanelProps> = ({
   logs,
@@ -168,27 +269,46 @@ export const LogPanel: React.FC<LogPanelProps> = ({
   const [isOpen, setIsOpen] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
 
-  // Auto-scroll to bottom when new logs arrive (if auto-scroll is on)
+  // Dynamic agent discovery
+  const allAgents = Array.from(new Set(logs.map(l => l.agent)))
+    .sort((a, b) => {
+      if (a === 'SYSTEM' || a === 'SWARM_DISPATCHER') return -1;
+      if (b === 'SYSTEM' || b === 'SWARM_DISPATCHER') return 1;
+      return a.localeCompare(b);
+    });
+
+  const toggleAgent = (agent: string) => {
+    setSelectedAgents(prev => {
+      const next = new Set(prev);
+      if (next.has(agent)) next.delete(agent);
+      else next.add(agent);
+      return next;
+    });
+  };
+
+  const filteredLogs = selectedAgents.size === 0 
+    ? logs 
+    : logs.filter(l => selectedAgents.has(l.agent));
+
   useEffect(() => {
     if (autoScroll && isOpen) {
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
-  }, [logs, autoScroll, isOpen]);
+  }, [filteredLogs, autoScroll, isOpen]);
 
-  // Detect manual scroll-up to pause auto-scroll
   const handleScroll = () => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     setAutoScroll(scrollHeight - scrollTop - clientHeight < 40);
   };
 
-  const errorCount  = logs.filter((l) => l.type === 'error').length;
-  const warnCount   = logs.filter((l) => l.type === 'warning').length;
+  const errorCount = logs.filter((l) => l.type === 'error').length;
+  const warnCount = logs.filter((l) => l.type === 'warning').length;
 
   return (
     <div className="absolute left-4 bottom-6 top-24 z-20 flex items-end pointer-events-none">
-      {/* Panel + toggle wrapper — always positioned on left edge */}
       <div className="flex items-end h-full pointer-events-auto">
 
         {/* ── Slide-in Panel ── */}
@@ -220,7 +340,6 @@ export const LogPanel: React.FC<LogPanelProps> = ({
                 >
                   <div className="relative">
                     <Terminal size={18} className="text-azure-mid" />
-                    {/* Connection dot */}
                     <span
                       className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full ${
                         isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'
@@ -276,6 +395,49 @@ export const LogPanel: React.FC<LogPanelProps> = ({
                   </div>
                 </div>
 
+                {/* ── Filtering Area ── */}
+                {allAgents.length > 0 && (
+                  <div 
+                    className="px-3 py-2 border-b flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0"
+                    style={{ borderColor: 'rgba(65,110,111,0.15)', background: 'rgba(0,0,0,0.1)' }}
+                  >
+                    <button
+                      onClick={() => setSelectedAgents(new Set())}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider transition-all border shrink-0 ${
+                        selectedAgents.size === 0 
+                          ? 'bg-azure-dark/40 text-mint-bg border-azure-mid/50' 
+                          : 'text-white/20 border-white/5 hover:border-white/10 hover:text-white/40'
+                      }`}
+                    >
+                      ALL
+                    </button>
+                    <div className="w-px h-3 bg-white/10 shrink-0" />
+                    <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                      {allAgents.map(agent => {
+                        const isSelected = selectedAgents.has(agent);
+                        const color = agentColor(agent);
+                        return (
+                          <button
+                            key={agent}
+                            onClick={() => toggleAgent(agent)}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wider transition-all border whitespace-nowrap ${
+                              isSelected 
+                                ? 'text-white border-opacity-100' 
+                                : 'text-white/30 border-transparent hover:text-white/50'
+                            }`}
+                            style={{ 
+                              backgroundColor: isSelected ? `${color}33` : 'transparent',
+                              borderColor: isSelected ? `${color}60` : 'rgba(255,255,255,0.05)'
+                            }}
+                          >
+                            {formatAgent(agent).toUpperCase()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* ── Auto-scroll indicator ── */}
                 {!autoScroll && (
                   <div className="px-3 py-1.5 bg-azure-dark/20 border-b border-azure-dark/20 flex items-center justify-between shrink-0">
@@ -299,17 +461,26 @@ export const LogPanel: React.FC<LogPanelProps> = ({
                   className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2 min-h-0"
                   style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(65,110,111,0.4) transparent' }}
                 >
-                  {logs.length === 0 ? (
+                  {filteredLogs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full gap-3 opacity-30">
-                      <Terminal size={28} className="text-azure-mid" />
-                      <span className="text-sm text-white/50 font-mono">Awaiting telemetry…</span>
+                      {selectedAgents.size > 0 ? (
+                        <>
+                          <FilterX size={28} className="text-azure-mid" />
+                          <span className="text-sm text-white/50 font-mono text-center px-4">
+                            No events from selected agents
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Terminal size={28} className="text-azure-mid" />
+                          <span className="text-sm text-white/50 font-mono">Awaiting telemetry…</span>
+                        </>
+                      )}
                     </div>
                   ) : (
-                    logs.map((log, i) => <LogRow key={log.id} log={log} index={i} />)
+                    filteredLogs.map((log, i) => <LogRow key={log.id} log={log} index={i} />)
                   )}
                 </div>
-
-                {/* ── Footer removed ── */}
               </div>
             </motion.div>
           )}
@@ -346,7 +517,6 @@ export const LogPanel: React.FC<LogPanelProps> = ({
             <ChevronRight size={13} className="text-azure-mid" />
           )}
 
-          {/* Vertical label */}
           <span
             className="text-[9px] font-bold tracking-[0.2em] text-azure-mid/80"
             style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
@@ -354,7 +524,6 @@ export const LogPanel: React.FC<LogPanelProps> = ({
             LOG
           </span>
 
-          {/* Live pulse dot */}
           <span
             className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-red-500'}`}
           />

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { MissionConfig, DroneStatus, LogEntry, EnvironmentState } from '../types';
 import { BASE_X, BASE_Y } from '../constants';
 import { resetMissionApi, generateMapApi, startMissionApi, abortMissionApi } from '../lib/api';
@@ -18,6 +18,7 @@ export const useMissionControl = () => {
   const [survivorsFound, setSurvivorsFound] = useState(0);
   const [survivorsDetected, setSurvivorsDetected] = useState(0);
   const [revealedCells, setRevealedCells] = useState(0);
+  const [coverage, setCoverage] = useState<{x: number, y: number}[]>([]);
   const [drones, setDrones] = useState<DroneStatus[]>([]);
   const [environmentState, setEnvironmentState] = useState<EnvironmentState>({
     buildings: [],
@@ -57,6 +58,7 @@ export const useMissionControl = () => {
     discoveredRef.current = new Set();
     seenLogsRef.current = new Set();
     setRevealedCells(0);
+    setCoverage([]);
     setIsSimulationRunning(false);
     setMapData(null);
     setIsMapGenerated(false);
@@ -67,12 +69,30 @@ export const useMissionControl = () => {
 
   }, [addLog]);
 
+  // Global cleanup: ensure all scans disappear after 4 seconds
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      setEnvironmentState(prev => {
+        const freshScans = prev.thermalScans.filter(s => {
+          const createdAt = s.createdAt || now;
+          return now - createdAt < 4000;
+        });
+        if (freshScans.length === prev.thermalScans.length) return prev;
+        return { ...prev, thermalScans: freshScans };
+      });
+    }, 500); 
+    return () => clearInterval(cleanupInterval);
+  }, []);
+
   const generateMapPreview = useCallback(async () => {
     setIsGenerating(true);
     try {
       const data = await generateMapApi();
       setMapData(data.map_data);
-      setEnvironmentState(initializeEnvironmentState(data.map_data));
+      const envState = initializeEnvironmentState(data.map_data);
+      
+      setEnvironmentState(envState);
 
       // Spaced-out drone initialization at base (9.5, 9.5)
       const droneCount = data.num_drones || 3;
@@ -174,6 +194,8 @@ export const useMissionControl = () => {
     setSurvivorsDetected,
     revealedCells,
     setRevealedCells,
+    coverage,
+    setCoverage,
     drones,
     setDrones,
     environmentState,

@@ -12,7 +12,8 @@ interface WebSocketHookProps {
   setEnvironmentState: React.Dispatch<React.SetStateAction<EnvironmentState>>;
   setSurvivorsFound: (val: number) => void;
   setSurvivorsDetected: (val: number) => void;
-  setRevealedCells: (val: number) => void;
+  setRevealedCells: (val: number | ((prev: number) => number)) => void;
+  setCoverage: (val: {x: number, y: number}[] | ((prev: {x: number, y: number}[]) => {x: number, y: number}[])) => void;
   addLog: (agent: string, message: string, type?: LogEntry['type'], details?: LogEntry['details']) => void;
   discoveredRef: React.MutableRefObject<Set<string>>;
   seenLogsRef: React.MutableRefObject<Set<string>>;
@@ -113,6 +114,7 @@ export const useWebSocket = (props: WebSocketHookProps) => {
           setSurvivorsFound,
           setSurvivorsDetected,
           setRevealedCells,
+          setCoverage,
           addLog,
           discoveredRef,
           seenLogsRef,
@@ -128,25 +130,39 @@ export const useWebSocket = (props: WebSocketHookProps) => {
             return;
           }
 
-          if (msg.type === 'agent_reasoning_completed') {
+          // ── Agent Reasoning ──────────────────────────────────────────────
+          if (msg.type === 'agent_reasoning') {
             const payload = msg.payload ?? {};
-            addLog(payload.agent_role || 'AGENT', `Created a plan:`, 'info', {
+            addLog(payload.agent || 'AGENT', payload.summary || 'Reasoning…', 'reasoning', {
               type: 'reasoning',
-              plan: payload.plan,
-              task_id: payload.task_id,
-              ready: payload.ready,
+              thought: payload.thought || '',
             });
             return;
           }
 
-          if (msg.type === 'mcp_tool_execution_completed') {
+          // ── Tool Call ──────────────────────────────────────────────────────
+          if (msg.type === 'tool_call') {
             const payload = msg.payload ?? {};
-            addLog('SYSTEM', `Tool execution completed: ${payload.tool_name}`, 'success', {
-              type: 'tool_execution',
+            const args = payload.tool_args ?? {};
+            const hasArgs = Object.keys(args).length > 0;
+            const argsDisplay = hasArgs
+              ? Object.entries(args).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ')
+              : 'no arguments needed';
+            addLog(payload.agent || 'AGENT', `${payload.tool_name}`, 'tool_call', {
+              type: 'tool_call',
               tool_name: payload.tool_name,
-              tool_args: payload.tool_args,
-              result: payload.result,
-              execution_duration_ms: payload.execution_duration_ms,
+              tool_args: args,
+            });
+            return;
+          }
+
+          // ── Tool Response ──────────────────────────────────────────────────
+          if (msg.type === 'tool_response') {
+            const payload = msg.payload ?? {};
+            addLog(payload.agent || 'AGENT', payload.tool_name || 'Done.', 'tool_response', {
+              type: 'tool_response',
+              tool_name: payload.tool_name,
+              result_message: payload.result_message,
             });
             return;
           }
@@ -168,7 +184,7 @@ export const useWebSocket = (props: WebSocketHookProps) => {
                       rawStatus === 'RETURNING'  ? 'returning'
                       : rawStatus === 'CHARGING' ? 'charging'
                       : rawStatus === 'IDLE'     ? 'idle'
-                      : 'searching'; // SEARCHING maps to patrolling
+                      : 'searching';
                     return { ...d, status };
                   }
                   return d;
@@ -187,7 +203,37 @@ export const useWebSocket = (props: WebSocketHookProps) => {
               })),
             }));
 
-            addLog('SYSTEM', `Dispatcher update: ${sectorData.length} sector(s) assigned.`, 'info');
+            addLog('SYSTEM', `Dispatcher update: ${sectorData.length} sector(s) assigned to the drones.`, 'info');
+            return;
+          }
+
+          if (msg.type === 'thermal_scan_event') {
+            const payload = msg.payload ?? {};
+            setEnvironmentState((prev) => ({
+              ...prev,
+              thermalScans: [
+                ...prev.thermalScans,
+                { 
+                  cx: Number(payload.cx),
+                  cy: Number(payload.cy),
+                  angle: Number(payload.angle),
+                  arc: Number(payload.arc),
+                  radius: Number(payload.radius),
+                  createdAt: Date.now() 
+                }
+              ],
+            }));
+            return;
+          }
+
+          if (msg.type === 'coverage_update') {
+            const payload = msg.payload ?? {};
+            const cellPairs = Array.isArray(payload.cells) ? payload.cells : [];
+            if (cellPairs.length > 0) {
+              const formattedCells = cellPairs.map((c: any) => ({ x: c[0], y: c[1] }));
+              setCoverage(formattedCells);
+              setRevealedCells(formattedCells.length);
+            }
             return;
           }
 
@@ -198,7 +244,6 @@ export const useWebSocket = (props: WebSocketHookProps) => {
             const building_upds = Array.isArray(payload.buildings)     ? payload.buildings     : [];
             const agent_logs    = Array.isArray(payload.logs)          ? payload.logs          : [];
             const survivors     = Array.isArray(payload.survivors)     ? payload.survivors     : [];
-            const thermalScans  = Array.isArray(payload.thermal_scans) ? payload.thermal_scans : [];
 
             if (isSimulationRunning && drone_states.length === 0 && revealedCells > 10) {
               setIsSimulationRunning(false);
@@ -219,8 +264,13 @@ export const useWebSocket = (props: WebSocketHookProps) => {
 
                 const dx = newX - prevX;
                 const dy = newY - prevY;
-                const heading = Math.atan2(dy, dx) * (180 / Math.PI);
-                const velocityMag = Math.sqrt(dx * dx + dy * dy);
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                // Fix velocity and heading logic for continuous space
+                // Velocity is fixed to 1.0 if the drone moved, to ensure consistent visual tilt
+                const velocityMag = dist > 0.01 ? 1.0 : 0.0;
+                // Preserve the previous heading if the drone is stationary
+                const heading = dist > 0.01 ? Math.atan2(dy, dx) * (180 / Math.PI) : (prevD?.heading ?? 0);
 
                 const prevTrail: [number, number, number][] = prevD?.trail ?? [];
                 const trail: [number, number, number][] = [
@@ -232,7 +282,7 @@ export const useWebSocket = (props: WebSocketHookProps) => {
                   String(ds.status ?? '').toUpperCase() === 'RETURNING' ? 'returning'
                   : String(ds.status ?? '').toUpperCase() === 'CHARGING' ? 'charging'
                   : String(ds.status ?? '').toUpperCase() === 'IDLE'     ? 'idle'
-                  : 'patrolling';
+                  : 'searching';
 
                 return {
                   id,
@@ -282,11 +332,6 @@ export const useWebSocket = (props: WebSocketHookProps) => {
                 else newSurvivors.push({ x, y, isRescued: Boolean(s.discovered) });
               }
               next.survivors = newSurvivors;
-
-              next.thermalScans = thermalScans.map((scanXY: any) => ({
-                x: Number(scanXY.x),
-                y: Number(scanXY.y),
-              }));
 
               next.sectors = payload.sectors
                 ? payload.sectors.map((s: any) => ({
@@ -352,9 +397,9 @@ export const useWebSocket = (props: WebSocketHookProps) => {
             setIsSimulationRunning(false);
             return;
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error('WS message error:', e);
-          addLog('SYSTEM', 'WS message parse error.', 'warning');
+          addLog('SYSTEM', `WS Error: ${e.message || 'Unknown error'}`, 'warning');
         }
       };
     };

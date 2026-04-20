@@ -66,6 +66,9 @@ class RescueCrew:
                         thinking_budget=-1,
                     )
                 ),
+                generate_content_config=types.GenerateContentConfig(
+                    temperature=0.4,
+                ),
             )
         return self._dispatcher_agent
 
@@ -100,6 +103,9 @@ class RescueCrew:
                         include_thoughts=True,
                         thinking_budget=300,
                     )
+                ),
+                generate_content_config=types.GenerateContentConfig(
+                    temperature=0.4,
                 ),
                 disallow_transfer_to_parent=True,
                 disallow_transfer_to_peers=True

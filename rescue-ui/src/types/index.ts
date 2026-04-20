@@ -13,11 +13,20 @@ export interface SectorData {
   radius: number;
 }
 
+export interface ThermalScanNode {
+  cx: number;
+  cy: number;
+  angle: number;
+  arc: number;
+  radius: number;
+  createdAt?: number;
+}
+
 export interface EnvironmentState {
   buildings: BuildingNode[];
   obstacles: ObstacleNode[];
   survivors: SurvivorNode[];
-  thermalScans: EntityCoord[];
+  thermalScans: ThermalScanNode[];
   sectors: SectorData[];
 }
 
@@ -43,20 +52,29 @@ export interface LogEntry {
   timestamp: string;
   agent: string;
   message: string;
-  type: 'info' | 'warning' | 'success' | 'error';
+  type: 'info' | 'warning' | 'success' | 'error' | 'reasoning' | 'tool_call' | 'tool_response';
   details?: {
-    type?: 'reasoning' | 'tool_execution';
-    plan?: string;
-    task_id?: string;
-    ready?: boolean;
+    type?: 'reasoning' | 'tool_call' | 'tool_response';
+    // Reasoning
+    thought?: string;          // sentence under [THOUGHT: True]
+    // Tool call / response
     tool_name?: string;
     tool_args?: Record<string, unknown>;
-    execution_duration_ms?: number;
-    result?: unknown;
+    result_message?: string;   // human-readable result from the MCP tool
     [key: string]: unknown;
   };
 }
 
 export interface MissionConfig {
   droneCount: number;
+}
+
+export interface ThermalZone {
+  id: string;
+  polygon: number[][]; // [x, y, z]
+  createdAt: number;
+}
+export interface CoverageCell {
+  x: number; // x_idx (0-39)
+  y: number; // y_idx (0-39)
 }

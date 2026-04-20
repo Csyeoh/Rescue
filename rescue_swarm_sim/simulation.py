@@ -308,25 +308,49 @@ class DisasterZoneModel(Model):
                     dy = float(intent.get("dy", 0.0))
 
                     if math.hypot(dx, dy) > 0:
-                        # Collision check: is destination tile an obstacle?
-                        dest_tile = (
-                            int(drone.pos[0] + dx),
-                            int(drone.pos[1] + dy)
-                        )
-                        if dest_tile in self.obstacle_map:
+                        # Tile-based Collision Check (Robust)
+                        nx, ny = drone.pos[0] + dx, drone.pos[1] + dy
+                        tx, ty = int(nx), int(ny)
+                        # Check maps for any blocking agent in the target integer tile
+                        collision_agent = self.obstacle_map.get((tx, ty)) or self.building_map.get((tx, ty))
+                        
+                        if collision_agent:
                             drone.status = "CRASHED"
                             drone.is_destroyed = True
-                            self.log_action(d_id, f"Fatal crash into obstacle at tile {dest_tile}!")
+                            agent_type = "building" if isinstance(collision_agent, BuildingAgent) else "obstacle"
+                            self.log_action(d_id, f"FATAL CRASH: Entered {agent_type} tile at ({tx}, {ty})!")
                         else:
                             drone.move(dx, dy)
 
-                    # Reveal area within 1-unit radius using ContinuousSpace
+                    # Reveal area within 1.0-unit radius using ContinuousSpace
                     nearby = self.space.get_neighbors(drone.pos, radius=1.0, include_center=True)
+                    
+                    revealed_cells = []
+                    # Standardized revealed logic: 0.5 unit grid (40x40)
+                    # For each drone, update the coverage cells in its vicinity
+                    # This is a bit brute-force but for 1.0 radius it's only ~16 checks per drone.
+                    cx, cy = drone.pos
+                    r = 1.0
+                    for ix in range(max(0, int((cx - r) * 2)), min(40, int((cx + r) * 2) + 1)):
+                        for iy in range(max(0, int((cy - r) * 2)), min(40, int((cy + r) * 2) + 1)):
+                            # Check distance from drone to cell center
+                            cell_x = ix * 0.5 + 0.25
+                            cell_y = iy * 0.5 + 0.25
+                            if math.hypot(cell_x - cx, cell_y - cy) <= r:
+                                revealed_cells.append((ix, iy))
+
+                    if revealed_cells:
+                        db.sync_coverage(revealed_cells)
+
                     for obj in nearby:
                         if isinstance(obj, BuildingAgent):
                             obj.revealed = True
+                            # Force coverage update for building location
+                            db.sync_coverage([(int(obj.pos[0]*2), int(obj.pos[1]*2))])
                         elif isinstance(obj, ObstacleAgent):
                             obj.discovered = True
+                            # Force coverage update for obstacle location
+                            db.sync_coverage([(int(obj.pos[0]*2), int(obj.pos[1]*2))])
                         elif isinstance(obj, SurvivorAgent) and not obj.found:
                             obj.found = True
                             self.found_survivors += 1

@@ -29,12 +29,12 @@ function deriveOrientation(drone: DroneStatus): [number, number, number] {
 // Status-based tint color
 // ---------------------------------------------------------------------------
 
-function statusColor(status: DroneStatus['status'], theme: { charging: number[], returning: number[], idle: number[], patrolling: number[] }): [number, number, number] {
+function statusColor(status: DroneStatus['status'], theme: { charging: number[], returning: number[], idle: number[], searching: number[] }): [number, number, number] {
   switch (status) {
     case 'charging':  return theme.charging as [number, number, number];
     case 'returning': return theme.returning as [number, number, number];
     case 'idle':      return theme.idle as [number, number, number];
-    default:          return theme.patrolling as [number, number, number];
+    default:          return theme.searching as [number, number, number];
   }
 }
 
@@ -61,7 +61,7 @@ export function createDroneLayer(drones: DroneStatus[], modelUrl: string, theme:
     getPosition: (d: DroneStatus) => {
       // Sit on the base pad (z=0.2) when idle/charging, otherwise fly high (z=1.5)
       const isGrounded = d.status === 'idle' || d.status === 'charging';
-      return [d.x, d.y, isGrounded ? 0.5 : 1.5] as [number, number, number];
+      return [d.x, d.y, isGrounded ? 0.5 : 1.1] as [number, number, number];
     },
     getOrientation: (d: DroneStatus) => deriveOrientation(d),
     getColor: (d: DroneStatus) => statusColor(d.status, theme),

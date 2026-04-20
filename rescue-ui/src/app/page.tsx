@@ -31,6 +31,8 @@ export default function DeckApp() {
     setSurvivorsFound,
     revealedCells,
     setRevealedCells,
+    coverage,
+    setCoverage,
     drones,
     setDrones,
     environmentState,
@@ -59,6 +61,7 @@ export default function DeckApp() {
     setSurvivorsFound,
     setSurvivorsDetected,
     setRevealedCells,
+    setCoverage,
     addLog,
     discoveredRef,
     seenLogsRef
@@ -76,6 +79,7 @@ export default function DeckApp() {
         <DeckGLContainer 
           environmentState={environmentState} 
           drones={drones} 
+          coverage={coverage}
           mode="god" 
           showCoords={showCoords}
           showSectors={showSectors}
