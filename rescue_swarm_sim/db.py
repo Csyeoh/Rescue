@@ -85,6 +85,16 @@ def init_db():
             cells.append((ix, iy, 0))
     cursor.executemany("INSERT INTO coverage (x_idx, y_idx, revealed) VALUES (?,?,?)", cells)
 
+    cursor.execute("""
+        CREATE TABLE mission_telemetry (
+            tick INTEGER PRIMARY KEY,
+            timestamp REAL,
+            coverage_count INTEGER,
+            found_survivors INTEGER,
+            total_battery_consumed INTEGER
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -161,3 +171,80 @@ def get_revealed_coverage():
     rows = cursor.fetchall()
     conn.close()
     return rows
+
+def log_telemetry(tick, timestamp, total_battery_consumed):
+    """Logs a snapshot of the mission state at a specific tick."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    try:
+        # Calculate current coverage dynamically
+        cursor.execute("SELECT COUNT(*) FROM coverage WHERE revealed=1")
+        coverage_count = cursor.fetchone()[0]
+
+        # Calculate found survivors
+        cursor.execute("SELECT COUNT(*) FROM survivors WHERE found=1")
+        found_survivors = cursor.fetchone()[0]
+
+        cursor.execute(
+            "INSERT INTO mission_telemetry (tick, timestamp, coverage_count, found_survivors, total_battery_consumed) VALUES (?,?,?,?,?)",
+            (tick, timestamp, coverage_count, found_survivors, total_battery_consumed)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def generate_mission_report():
+    """Calculates AUC, MTTD, and other efficiency metrics from telemetry."""
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    
+    # Fetch chronological telemetry
+    cursor.execute("SELECT tick, coverage_count, found_survivors, total_battery_consumed FROM mission_telemetry ORDER BY tick ASC")
+    telemetry = cursor.fetchall()
+    conn.close()
+
+    if not telemetry:
+        return {"error": "No telemetry data available for report."}
+
+    max_coverage = 1600 # 40x40 grid in continuous_space
+
+    # Metric 1: Area Under the Curve (AUC) for Discovery
+    # AUC = sum(coverage(t) * dt)
+    auc = 0
+    for i in range(1, len(telemetry)):
+        prev_cov = telemetry[i-1][1]
+        dt = telemetry[i][0] - telemetry[i-1][0] # Delta Tick
+        auc += prev_cov * dt
+
+    # Metric 2: Mean Time To Discovery (MTTD)
+    discovery_ticks = []
+    curr_surv = 0
+    for row in telemetry:
+        if row[2] > curr_surv: # A survivor was found!
+            new_found = row[2] - curr_surv
+            discovery_ticks.extend([row[0]] * new_found) # Log the tick it happened
+            curr_surv = row[2]
+            
+    mttd = sum(discovery_ticks) / len(discovery_ticks) if discovery_ticks else 0
+
+    # Final States
+    final_tick = telemetry[-1][0]
+    final_cov = telemetry[-1][1]
+    final_surv = telemetry[-1][2]
+    total_battery = telemetry[-1][3]
+
+    # Energy Efficiency (Battery spent per cell revealed)
+    energy_per_cell = round(total_battery / final_cov, 3) if final_cov > 0 else 0
+
+    return {
+        "mission_duration_ticks": final_tick,
+        "final_coverage": final_cov,
+        "coverage_percentage": round((final_cov / max_coverage) * 100, 2),
+        "survivors_found": final_surv,
+        "discovery_auc": auc,
+        "mean_time_to_discovery": round(mttd, 2),
+        "energy_efficiency": energy_per_cell,
+        "chart_data": [
+            {"tick": row[0], "coverage": row[1], "survivors": row[2]} for row in telemetry
+        ]
+    }

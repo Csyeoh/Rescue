@@ -314,13 +314,13 @@ class DisasterZoneModel(Model):
                         # Check maps for any blocking agent in the target integer tile
                         collision_agent = self.obstacle_map.get((tx, ty)) or self.building_map.get((tx, ty))
                         
-                        if collision_agent:
-                            drone.status = "CRASHED"
-                            drone.is_destroyed = True
-                            agent_type = "building" if isinstance(collision_agent, BuildingAgent) else "obstacle"
-                            self.log_action(d_id, f"FATAL CRASH: Entered {agent_type} tile at ({tx}, {ty})!")
-                        else:
-                            drone.move(dx, dy)
+                        # if collision_agent:
+                        #     drone.status = "CRASHED"
+                        #     drone.is_destroyed = True
+                        #     agent_type = "building" if isinstance(collision_agent, BuildingAgent) else "obstacle"
+                        #     self.log_action(d_id, f"FATAL CRASH: Entered {agent_type} tile at ({tx}, {ty})!")
+                        # else:
+                        drone.move(dx, dy)
 
                     # Reveal area within 1.0-unit radius using ContinuousSpace
                     nearby = self.space.get_neighbors(drone.pos, radius=1.0, include_center=True)
@@ -377,6 +377,23 @@ class DisasterZoneModel(Model):
             self.mission_complete = True
 
         self.sync_to_db()
+
+        # --- NEW: 6. Log Telemetry for Post-Mission Report ---
+        import time
+        total_battery_capacity = 0
+        current_battery = 0
+        
+        for a in self.schedule.agents:
+            if isinstance(a, DroneAgent):
+                # Assuming starting battery is 100
+                total_battery_capacity += getattr(a, 'max_battery', 100) 
+                current_battery += a.battery
+                
+        # Net battery used (charging will reduce this net amount, 
+        # but it gives us a good proxy for overall energy expenditure)
+        total_battery_consumed = total_battery_capacity - current_battery
+        
+        db.log_telemetry(self.tick_count, time.time(), total_battery_consumed)
 
 sim_world = None
 

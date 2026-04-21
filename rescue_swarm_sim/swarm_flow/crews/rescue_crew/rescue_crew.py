@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from google.adk import Agent
 from google.adk.agents.parallel_agent import ParallelAgent
 from google.adk.tools.mcp_tool import McpToolset, StdioConnectionParams
-from google.adk.models import LiteLlm
 from google.adk.planners import BuiltInPlanner
 from google.genai import types
 from mcp.client.stdio import StdioServerParameters
@@ -51,7 +50,7 @@ class RescueCrew:
 
     def get_dispatcher_agent(self) -> Agent:
         if self._dispatcher_agent is None:
-            with open(self.prompts_path / 'dispatcher.md', 'r') as f:
+            with open(self.prompts_path / 'dispatcher.md', 'r', encoding='utf-8') as f:
                 instruction = f.read()
             
             self._dispatcher_agent = Agent(
@@ -74,7 +73,7 @@ class RescueCrew:
 
     def get_drone_agent(self, drone_id: str) -> Agent:
         if drone_id not in self._drone_agents:
-            with open(self.prompts_path / 'drone_pilot.md', 'r') as f:
+            with open(self.prompts_path / 'drone_pilot.md', 'r', encoding='utf-8') as f:
                 instruction_template = f.read()
             
             instruction = instruction_template.replace('{drone_id}', drone_id)

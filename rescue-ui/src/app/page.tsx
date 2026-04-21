@@ -8,6 +8,7 @@ import { Header } from '../components/Layout/Header';
 import { LogPanel } from '../components/Layout/LogPanel';
 import { SwarmStatusPanel } from '../components/Layout/SwarmStatusPanel';
 import DeckGLContainer from '../components/Map/DeckGLContainer';
+import { MissionReportModal } from '../components/Report/MissionReportModal'; // Import it
 
 export default function DeckApp() {
 
@@ -46,7 +47,9 @@ export default function DeckApp() {
     downloadLogsAsText,
     mapData,
     discoveredRef,
-    seenLogsRef
+    seenLogsRef,
+    missionReport,
+    setMissionReport
   } = useMissionControl();
 
   const clearLogs = () => setLogs([]);
@@ -61,6 +64,7 @@ export default function DeckApp() {
     setSurvivorsFound,
     setSurvivorsDetected,
     setRevealedCells,
+    setMissionReport,
     setCoverage,
     addLog,
     discoveredRef,
@@ -225,6 +229,16 @@ export default function DeckApp() {
           </button>
         </div>
       </motion.div>
+      
+      <AnimatePresence>
+          {missionReport && (
+            <MissionReportModal 
+              report={missionReport} 
+              onClose={() => setMissionReport(null)} 
+            />
+          )}
+        </AnimatePresence>
+
     </div>
   );
 }

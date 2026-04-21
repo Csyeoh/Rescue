@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { MissionConfig, DroneStatus, LogEntry, EnvironmentState } from '../types';
+import { MissionConfig, DroneStatus, LogEntry, EnvironmentState, MissionReport } from '../types';
 import { BASE_X, BASE_Y } from '../constants';
 import { resetMissionApi, generateMapApi, startMissionApi, abortMissionApi } from '../lib/api';
 import { initializeEnvironmentState } from '../utils/map-utils';
@@ -20,6 +20,7 @@ export const useMissionControl = () => {
   const [revealedCells, setRevealedCells] = useState(0);
   const [coverage, setCoverage] = useState<{x: number, y: number}[]>([]);
   const [drones, setDrones] = useState<DroneStatus[]>([]);
+  const [missionReport, setMissionReport] = useState<MissionReport | null>(null);
   const [environmentState, setEnvironmentState] = useState<EnvironmentState>({
     buildings: [],
     obstacles: [],
@@ -55,6 +56,7 @@ export const useMissionControl = () => {
     setEnvironmentState({ buildings: [], obstacles: [], survivors: [], thermalScans: [], sectors: [] });
     setSurvivorsFound(0);
     setSurvivorsDetected(0);
+    setMissionReport(null);
     discoveredRef.current = new Set();
     seenLogsRef.current = new Set();
     setRevealedCells(0);
@@ -194,6 +196,8 @@ export const useMissionControl = () => {
     setSurvivorsDetected,
     revealedCells,
     setRevealedCells,
+    missionReport,
+    setMissionReport,
     coverage,
     setCoverage,
     drones,
