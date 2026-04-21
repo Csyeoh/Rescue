@@ -18,16 +18,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from .drone_tools import get_navigation_step, check_task_viability
+
 class DroneIntent(BaseModel):
-    drone_id: str  = Field(..., description="The ID of the drone")
+    drone_id: str  = Field(default="", description="The ID of the drone")
     dx: float      = Field(0.0, description="Movement delta X (-1.0 to 1.0). Combined magnitude with dy must be ≤ 1.0.")
     dy: float      = Field(0.0, description="Movement delta Y (-1.0 to 1.0). Combined magnitude with dx must be ≤ 1.0.")
-    status: str    = Field(..., description="The new status of the drone (SEARCHING, IDLE, RETURNING, CHARGING)")
+    status: str    = Field(default="IDLE", description="The new status of the drone (SEARCHING, IDLE, RETURNING, CHARGING)")
 
 class RescueCrew:
     def __init__(self):
         self.prompts_path = Path(__file__).parent / 'prompts'
-        self.model = "gemini-2.5-flash"
+        self.model = "gemini-2.5-flash-lite"
         
         # Initialize MCP Servers
         dispatcher_mcp_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server_dispatcher.py"))
@@ -62,7 +64,7 @@ class RescueCrew:
                 planner=BuiltInPlanner(
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
-                        thinking_budget=-1,
+                        thinking_budget=1024,  # <-- CHANGED FROM -1 TO 400
                     )
                 ),
                 generate_content_config=types.GenerateContentConfig(
@@ -94,13 +96,13 @@ class RescueCrew:
                 description=f"Pilot for {drone_id}",
                 instruction=instruction,
                 model=self.model,
-                tools=[drone_mcp_toolset],
+                tools=[drone_mcp_toolset, get_navigation_step, check_task_viability],
                 output_key=f"raw_intent_{drone_id}", 
                 output_schema=DroneIntent,
                 planner=BuiltInPlanner(
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
-                        thinking_budget=300,
+                        thinking_budget=1024,
                     )
                 ),
                 generate_content_config=types.GenerateContentConfig(
