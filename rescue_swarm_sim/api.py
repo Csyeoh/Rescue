@@ -1,10 +1,21 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import asyncio
 import simulation
 import websocket_manager
 from typing import Optional, Dict, Any
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+import os
+import tempfile
+import json
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
+
+load_dotenv()
+
+client = genai.Client()
 
 app = FastAPI(title="Rescue Swarm API")
 
@@ -73,6 +84,54 @@ def abort_mission():
         if hasattr(simulation.sim_world, 'generate_log_file'):
             simulation.sim_world.generate_log_file()
     return {"status": "success", "message": "Aborted."}
+
+@app.post("/api/survivors/{survivor_id}/voice-intel")
+async def process_survivor_voice(survivor_id: int, file: UploadFile = File(...)):
+    """Receives voice audio, extracts intel via Gemini, and returns structured data."""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
+        temp_audio.write(await file.read())
+        temp_audio_path = temp_audio.name
+
+    try:
+        uploaded_file = client.files.upload(file=temp_audio_path)
+        
+        prompt = """
+        Listen to this survivor transmission. Extract the situation into a strict JSON format:
+        {
+            "transcription": "exact words spoken",
+            "medical_needs": ["list", "of", "injuries"],
+            "requested_supplies": ["list", "of", "items"],
+            "urgency_level": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
+        }
+        """
+        
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[uploaded_file, prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+            ),
+        )
+
+        raw_text = response.text.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text.replace("```json", "").replace("```", "").strip()
+            
+        intel_data = json.loads(raw_text)
+        
+        
+        # HACKATHON NOTE: For now, we return it to the frontend. 
+        # Later, inject `intel_data` into simulation.sim_world here if needed.
+        
+        client.files.delete(name=uploaded_file.name)
+        return {"status": "success", "survivor_id": survivor_id, "intel": intel_data}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        os.remove(temp_audio_path)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
