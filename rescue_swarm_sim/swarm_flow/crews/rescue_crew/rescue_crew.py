@@ -28,7 +28,23 @@ class DroneIntent(BaseModel):
 class RescueCrew:
     def __init__(self):
         self.prompts_path = Path(__file__).parent / 'prompts'
-        self.model = "gemini-2.5-flash"
+        # --- NEW: Environment-Aware Model Routing ---
+        use_local = os.getenv("USE_LOCAL_LLM", "false").lower() == "true"
+        
+        if use_local:
+            raw_model = os.getenv("LOCAL_MODEL", "qwen2.5-coder:7b")
+            model_str = f"ollama/{raw_model}" if not raw_model.startswith("ollama/") else raw_model
+            
+            # Ensure Ollama base URL is set in the OS environment for LiteLLM
+            os.environ["OLLAMA_API_BASE"] = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+            
+            # Wrap the local model in ADK's LiteLlm adapter
+            self.model = LiteLlm(model=model_str)
+            print(f"🚀 [SYSTEM] Routing Swarm Intelligence to LOCAL GPU via {model_str}")
+        else:
+            self.model = "gemini-2.5-flash"
+            print(f"☁️ [SYSTEM] Routing Swarm Intelligence to CLOUD via {self.model}")
+        # --------------------------------------------
         
         # Initialize MCP Servers
         dispatcher_mcp_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server_dispatcher.py"))
@@ -60,12 +76,12 @@ class RescueCrew:
                 instruction=instruction,
                 model=self.model,
                 tools=[self.dispatcher_mcp_toolset],
-                planner=BuiltInPlanner(
-                    thinking_config=types.ThinkingConfig(
-                        include_thoughts=True,
-                        thinking_budget=-1,
-                    )
-                ),
+                # planner=BuiltInPlanner(
+                #     thinking_config=types.ThinkingConfig(
+                #         include_thoughts=True,
+                #         thinking_budget=-1,
+                #     )
+                # ),
                 generate_content_config=types.GenerateContentConfig(
                     temperature=0.4,
                 ),
@@ -97,13 +113,17 @@ class RescueCrew:
                 model=self.model,
                 tools=[drone_mcp_toolset],
                 output_key=f"raw_intent_{drone_id}", 
-                output_schema=DroneIntent,
-                planner=BuiltInPlanner(
-                    thinking_config=types.ThinkingConfig(
-                        include_thoughts=True,
-                        thinking_budget=300,
-                    )
-                ),
+                
+                # --- DISABLED FOR LOCAL LLM COMPATIBILITY ---
+                # output_schema=DroneIntent,
+                # planner=BuiltInPlanner(
+                #     thinking_config=types.ThinkingConfig(
+                #         include_thoughts=True,
+                #         thinking_budget=300,
+                #     )
+                # ),
+                # --------------------------------------------
+                
                 generate_content_config=types.GenerateContentConfig(
                     temperature=0.4,
                 ),

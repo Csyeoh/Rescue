@@ -231,10 +231,13 @@ class SwarmCombinedFlow:
             self.simulation_active = False
             return
 
-        # 1. Dispatcher Phase: Run dispatcher to coordinate the swarm
+       # 1. Dispatcher Phase: Run dispatcher to coordinate the swarm
         self.log_to_file("PHASE: Dispatcher - Coordinating swarm.")
         dispatcher = self.rescue_crew.get_dispatcher_agent()
-        await self.run_agent(dispatcher, "Analyze mission status and coordinate the swarm.", session_id="mission_dispatcher")
+        
+        # --- NEW: Tick-specific stateless session for Dispatcher ---
+        dispatcher_session = f"mission_dispatcher_tick_{tick_count}"
+        await self.run_agent(dispatcher, "Analyze mission status and coordinate the swarm.", session_id=dispatcher_session)
         
         # Sync dispatcher-written fields (status, assigned_sector) from DB → Mesa
         simulation.sim_world.dispatcher_step()
@@ -249,21 +252,35 @@ class SwarmCombinedFlow:
         
         drone_ids = [d.unique_id for d in drones]
         
+        # --- NEW: Tick-specific stateless session for Drones ---
+        parallel_session = f"mission_drones_parallel_tick_{tick_count}"
+        
         # Run agents automatically using the ParallelAgent
         parallel_agent = self.rescue_crew.get_parallel_pilot_agent(drone_ids)
-        await self.run_agent(parallel_agent, f"Determine your next tactical move.", session_id="mission_drones_parallel")
+        await self.run_agent(parallel_agent, f"Determine your next tactical move.", session_id=parallel_session)
                 
         # Extract individual intents from ParallelAgent session state
         batch_intents = {}
         
-        session = await self.session_service.get_session(app_name="rescue_swarm", user_id="swarm_commander", session_id="mission_drones_parallel")
+        session = await self.session_service.get_session(app_name="rescue_swarm", user_id="swarm_commander", session_id=parallel_session)
+        
         for d_id in drone_ids:
             intent_data = session.state.get(f"raw_intent_{d_id}") if session else None
             
             if intent_data:
                 try:
                     if isinstance(intent_data, str):
-                        intent_obj = json.loads(intent_data)
+                        clean_text = intent_data.strip()
+                        # Strip out markdown formatting
+                        if "```" in clean_text:
+                            clean_text = clean_text.replace("```json", "").replace("```", "").strip()
+                        # Force extract just the JSON dictionary
+                        start_idx = clean_text.find('{')
+                        end_idx = clean_text.rfind('}') + 1
+                        if start_idx != -1 and end_idx != 0:
+                            clean_text = clean_text[start_idx:end_idx]
+                        
+                        intent_obj = json.loads(clean_text)
                     elif hasattr(intent_data, "model_dump"): # Handle pydantic object
                         intent_obj = intent_data.model_dump()
                     elif isinstance(intent_data, dict):
@@ -276,8 +293,12 @@ class SwarmCombinedFlow:
                     batch_intents[d_id] = intent_obj
                 except Exception as e:
                     self.log_to_file(f"[ERROR] Failed to parse intent for {d_id}: {e}")
+                    # --- RESTORED FALLBACK ---
+                    batch_intents[d_id] = {"drone_id": d_id, "dx": 0.0, "dy": 0.0, "status": "IDLE"}
             else:
                 self.log_to_file(f"[WARNING] No intent found in session state for {d_id}.")
+                # --- RESTORED FALLBACK ---
+                batch_intents[d_id] = {"drone_id": d_id, "dx": 0.0, "dy": 0.0, "status": "IDLE"}
 
         # 3. Physics Step
         self.log_to_file(f"PHASE: Physics - Applying {len(batch_intents)} drone intents.")

@@ -25,6 +25,8 @@ import {
   createCoverageLayer,
 } from '../../scene/layers';
 
+import SurvivorMic from '../UI/SurvivorMic';
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -32,7 +34,7 @@ import {
 interface DeckGLContainerProps {
   environmentState: EnvironmentState;
   drones: DroneStatus[];
-  coverage: {x: number, y: number}[];
+  coverage: { x: number, y: number }[];
   mode: 'god' | 'drone';
   showCoords: boolean;
   isNightMode: boolean;
@@ -121,6 +123,7 @@ export default function DeckGLContainer({
   showSectors
 }: DeckGLContainerProps) {
   const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null);
+  const [selectedSurvivorId, setSelectedSurvivorId] = useState<number | null>(null);
   const [time, setTime] = useState(0);
 
   // ── Animation Loop ──
@@ -147,7 +150,7 @@ export default function DeckGLContainer({
     return [
       // 0. Base ground plane below everything
       ...createGroundLayer({ ground: theme.ground, grid: theme.grid }),
-      
+
       // 0.5 Coverage layer (Fog of War)
       createCoverageLayer(coverage),
 
@@ -229,6 +232,17 @@ export default function DeckGLContainer({
         effects={[effect]}
         layers={layers}
         getCursor={() => 'default'}
+
+        onClick={(info) => {
+          if (info.layer?.id === 'survivors' && info.object) {
+            // Assuming your survivor object has an 'id'. If it uses index, use info.index.
+            setSelectedSurvivorId(info.object.id || info.index);
+          } else {
+            // Clicked somewhere else, dismiss the mic
+            setSelectedSurvivorId(null);
+          }
+        }}
+
         getTooltip={(info) => {
           if (!info || !info.object) return null;
           const { object, layer, coordinate } = info;
@@ -313,6 +327,20 @@ export default function DeckGLContainer({
           }
         }}
       />
+
+      {/* 2. RENDER THE MIC UI WHEN A SURVIVOR IS SELECTED */}
+      {selectedSurvivorId !== null && (
+        <SurvivorMic
+          survivorId={selectedSurvivorId}
+          onIntelReceived={(intel) => {
+            console.log("INTEL EXTRACTED FROM GEMINI:", intel);
+            // Alert for testing; replace with your Toast UI later!
+            alert(`Intel Received! \nUrgency: ${intel.urgency_level}\nNeeds: ${intel.requested_supplies.join(', ')}`);
+            setSelectedSurvivorId(null); // Close mic after successful submission
+          }}
+        />
+      )}
+
     </div>
   );
 }
