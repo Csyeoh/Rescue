@@ -9,6 +9,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, H
 import os
 import tempfile
 import json
+import requests
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -85,53 +86,87 @@ def abort_mission():
             simulation.sim_world.generate_log_file()
     return {"status": "success", "message": "Aborted."}
 
+class VoiceIntelRequest(BaseModel):
+    transcript: str
+
 @app.post("/api/survivors/{survivor_id}/voice-intel")
-async def process_survivor_voice(survivor_id: int, file: UploadFile = File(...)):
-    """Receives voice audio, extracts intel via Gemini, and returns structured data."""
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
-        temp_audio.write(await file.read())
-        temp_audio_path = temp_audio.name
+async def process_survivor_voice(survivor_id: int, payload: VoiceIntelRequest):
+    """Receives text transcript, extracts intel via local LLM, and returns structured data."""
+    transcript = payload.transcript
+    
+    # We feed the exact transcript string into a text prompt
+    #
+    prompt = f"""
+    Analyze the survivor transmission: "{transcript}"
+    Return ONLY valid JSON. 
+
+    IMPORTANT: "medical_needs" and "requested_supplies" MUST be lists of strings, even if empty.
+
+    {{
+        "transcription": "{transcript}",
+        "medical_needs": ["injury1", "injury2"],
+        "requested_supplies": ["item1", "item2"],
+        "urgency_level": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
+    }}
+    """
 
     try:
-        uploaded_file = client.files.upload(file=temp_audio_path)
+        use_local = os.getenv("USE_LOCAL_LLM", "false").lower() == "true"
         
-        prompt = """
-        Listen to this survivor transmission. Extract the situation into a strict JSON format:
-        {
-            "transcription": "exact words spoken",
-            "medical_needs": ["list", "of", "injuries"],
-            "requested_supplies": ["list", "of", "items"],
-            "urgency_level": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
-        }
-        """
-        
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[uploaded_file, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-            ),
-        )
+        if use_local:
+            # --- LOCAL OFFLINE MODE (Qwen via Ollama) ---
+            raw_model = os.getenv("LOCAL_MODEL", "qwen2.5-coder:7b")
+            # Clean up the name if it has the litellm "ollama/" prefix
+            if raw_model.startswith("ollama/"):
+                raw_model = raw_model.replace("ollama/", "")
+                
+            ollama_base = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
+            
+            # Send direct request to local Ollama instance
+            response = requests.post(
+                f"{ollama_base}/api/generate",
+                json={
+                    "model": raw_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json"  # Forces Ollama to strictly output valid JSON
+                }
+            )
+            
+            if response.status_code != 200:
+                raise Exception(f"Ollama API Error: {response.text}")
+                
+            raw_text = response.json().get("response", "").strip()
+            
+        else:
+            # --- FALLBACK CLOUD MODE (Gemini text-only) ---
+            # If your friend still wants to use the API for text extraction
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                ),
+            )
+            raw_text = response.text.strip()
 
-        raw_text = response.text.strip()
+        # Clean JSON if the model accidentally wrapped it in markdown
         if raw_text.startswith("```json"):
             raw_text = raw_text.replace("```json", "").replace("```", "").strip()
+        elif raw_text.startswith("```"):
+            raw_text = raw_text.replace("```", "").strip()
             
         intel_data = json.loads(raw_text)
-        
         
         # HACKATHON NOTE: For now, we return it to the frontend. 
         # Later, inject `intel_data` into simulation.sim_world here if needed.
         
-        client.files.delete(name=uploaded_file.name)
         return {"status": "success", "survivor_id": survivor_id, "intel": intel_data}
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        os.remove(temp_audio_path)
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

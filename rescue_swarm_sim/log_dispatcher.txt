@@ -1,46 +1,40 @@
---- Mission Log Started: 2026-04-22 00:14:32 ---
+--- Mission Log Started: 2026-04-22 02:19:42 ---
 
-[TICK 0] [00:14:32]
+[TICK 0] [02:19:42]
 🚀 [ADK] Starting Swarm Orchestration Loop...
 
-[TICK 0] [00:14:32]
+[TICK 0] [02:19:42]
 --- STARTING SWARM TICK 0 ---
 
-[TICK 0] [00:14:32]
+[TICK 0] [02:19:42]
 PHASE: Dispatcher - Coordinating swarm.
 
-[TICK 0] [00:14:32]
+[TICK 0] [02:19:42]
 START AGENT: swarm_dispatcher (Task: Analyze mission status and coordinate the swarm.)
 
-[TICK 0] [00:14:58]
+[TICK 0] [02:19:56]
 TOOL CALL (swarm_dispatcher): get_current_mission_status({})
 
-[TICK 0] [00:14:58]
-TOOL RESPONSE (swarm_dispatcher): get_current_mission_status -> {'content': [{'type': 'text', 'text': '{"mission state":{"complete":false,"total_survivors":13,"found_survivors":0},"drones status":[{"id":"drone_1","pos":[9.5,9.5],"battery":100,"status":"IDLE"},{"id":"drone_2","pos":[9.5,9.5],"battery":100,"status":"IDLE"},{"id":"drone_3","pos":[9.5,9.5],"battery":100,"status":"IDLE"}],"buildings":[{"id":"cluster_0","pos":[8.75,16.5],"revealed":false,"tile_count":8},{"id":"cluster_1","pos":[3.5,4.5],"revealed":false,"tile_count":1},{"id":"cluster_2","pos":[5.5,2.0],"revealed":false,"tile_count":4},{"id":"cluster_3","pos":[4.0,13.5],"revealed":false,"tile_count":2},{"id":"cluster_4","pos":[2.17,1.83],"revealed":false,"tile_count":3},{"id":"cluster_5","pos":[16.0,2.5],"revealed":false,"tile_count":2},{"id":"cluster_6","pos":[1.83,12.17],"revealed":false,"tile_count":3},{"id":"cluster_7","pos":[16.5,12.5],"revealed":false,"tile_count":3},{"id":"cluster_8","pos":[14.5,12.5],"revealed":false,"tile_count":1},{"id":"cluster_9","pos":[17.83,8.17],"revealed":false,"tile_count":3},{"id":"cluster_10","pos":[8.83,4.83],"revealed":false,"tile_count":3},{"id":"cluster_11","pos":[2.0,7.5],"revealed":false,"tile_count":2},{"id":"cluster_12","pos":[13.5,13.5],"revealed":false,"tile_count":1},{"id":"cluster_13","pos":[13.5,6.5],"revealed":false,"tile_count":1}],"unsearched buildings":[[8.75,16.5],[3.5,4.5],[5.5,2.0],[4.0,13.5],[2.17,1.83],[16.0,2.5],[1.83,12.17],[16.5,12.5],[14.5,12.5],[17.83,8.17],[8.83,4.83],[2.0,7.5],[13.5,13.5],[13.5,6.5]],"summary":"Mission: 0/13 survivors found, 3 drones active, 14 buildings unsearched."}'}], 'structuredContent': {'mission state': {'complete': False, 'total_survivors': 13, 'found_survivors': 0}, 'drones status': [{'id': 'drone_1', 'pos': [9.5, 9.5], 'battery': 100, 'status': 'IDLE'}, {'id': 'drone_2', 'pos': [9.5, 9.5], 'battery': 100, 'status': 'IDLE'}, {'id': 'drone_3', 'pos': [9.5, 9.5], 'battery': 100, 'status': 'IDLE'}], 'buildings': [{'id': 'cluster_0', 'pos': [8.75, 16.5], 'revealed': False, 'tile_count': 8}, {'id': 'cluster_1', 'pos': [3.5, 4.5], 'revealed': False, 'tile_count': 1}, {'id': 'cluster_2', 'pos': [5.5, 2.0], 'revealed': False, 'tile_count': 4}, {'id': 'cluster_3', 'pos': [4.0, 13.5], 'revealed': False, 'tile_count': 2}, {'id': 'cluster_4', 'pos': [2.17, 1.83], 'revealed': False, 'tile_count': 3}, {'id': 'cluster_5', 'pos': [16.0, 2.5], 'revealed': False, 'tile_count': 2}, {'id': 'cluster_6', 'pos': [1.83, 12.17], 'revealed': False, 'tile_count': 3}, {'id': 'cluster_7', 'pos': [16.5, 12.5], 'revealed': False, 'tile_count': 3}, {'id': 'cluster_8', 'pos': [14.5, 12.5], 'revealed': False, 'tile_count': 1}, {'id': 'cluster_9', 'pos': [17.83, 8.17], 'revealed': False, 'tile_count': 3}, {'id': 'cluster_10', 'pos': [8.83, 4.83], 'revealed': False, 'tile_count': 3}, {'id': 'cluster_11', 'pos': [2.0, 7.5], 'revealed': False, 'tile_count': 2}, {'id': 'cluster_12', 'pos': [13.5, 13.5], 'revealed': False, 'tile_count': 1}, {'id': 'cluster_13', 'pos': [13.5, 6.5], 'revealed': False, 'tile_count': 1}], 'unsearched buildings': [[8.75, 16.5], [3.5, 4.5], [5.5, 2.0], [4.0, 13.5], [2.17, 1.83], [16.0, 2.5], [1.83, 12.17], [16.5, 12.5], [14.5, 12.5], [17.83, 8.17], [8.83, 4.83], [2.0, 7.5], [13.5, 13.5], [13.5, 6.5]], 'summary': 'Mission: 0/13 survivors found, 3 drones active, 14 buildings unsearched.'}, 'isError': False}
+[TICK 0] [02:19:56]
+TOOL RESPONSE (swarm_dispatcher): get_current_mission_status -> {'content': [{'type': 'text', 'text': '{"mission state":{"complete":false,"total_survivors":13,"found_survivors":0},"drones status":[{"id":"drone_1","pos":[9.5,9.5],"battery":100,"status":"IDLE"},{"id":"drone_2","pos":[9.5,9.5],"battery":100,"status":"IDLE"},{"id":"drone_3","pos":[9.5,9.5],"battery":100,"status":"IDLE"}],"unsearched buildings":[[8.75,16.5],[3.5,4.5],[5.5,2.0],[4.0,13.5],[2.17,1.83],[16.0,2.5],[1.83,12.17],[16.5,12.5],[14.5,12.5],[17.83,8.17],[8.83,4.83],[2.0,7.5],[13.5,13.5],[13.5,6.5]],"summary":"Mission: 0/13 survivors found, 3 drones active, 14 buildings unsearched."}'}], 'structuredContent': {'mission state': {'complete': False, 'total_survivors': 13, 'found_survivors': 0}, 'drones status': [{'id': 'drone_1', 'pos': [9.5, 9.5], 'battery': 100, 'status': 'IDLE'}, {'id': 'drone_2', 'pos': [9.5, 9.5], 'battery': 100, 'status': 'IDLE'}, {'id': 'drone_3', 'pos': [9.5, 9.5], 'battery': 100, 'status': 'IDLE'}], 'unsearched buildings': [[8.75, 16.5], [3.5, 4.5], [5.5, 2.0], [4.0, 13.5], [2.17, 1.83], [16.0, 2.5], [1.83, 12.17], [16.5, 12.5], [14.5, 12.5], [17.83, 8.17], [8.83, 4.83], [2.0, 7.5], [13.5, 13.5], [13.5, 6.5]], 'summary': 'Mission: 0/13 survivors found, 3 drones active, 14 buildings unsearched.'}, 'isError': False}
 
-[TICK 0] [00:15:02]
-TOOL CALL (swarm_dispatcher): allocate_drone_sector({"drone_id": "drone_1", "center_x": 8.75, "center_y": 16.5, "radius": 2})
+[TICK 0] [02:19:59]
+TOOL CALL (swarm_dispatcher): evaluate_sector_overlap({"center_x": 8.75, "center_y": 16.5, "radius": 2.0})
 
-[TICK 0] [00:15:02]
+[TICK 0] [02:19:59]
+TOOL RESPONSE (swarm_dispatcher): evaluate_sector_overlap -> {'content': [{'type': 'text', 'text': '{"summary":"No major overlap detected for (8.75, 16.5) r=2.0. Sector is clear to assign.","is_clear":true}'}], 'structuredContent': {'summary': 'No major overlap detected for (8.75, 16.5) r=2.0. Sector is clear to assign.', 'is_clear': True}, 'isError': False}
+
+[TICK 0] [02:20:03]
+TOOL CALL (swarm_dispatcher): allocate_drone_sector({"drone_id": "drone_1", "center_x": 8.75, "center_y": 16.5, "radius": 2.0})
+
+[TICK 0] [02:20:03]
 TOOL RESPONSE (swarm_dispatcher): allocate_drone_sector -> {'content': [{'type': 'text', 'text': '{"summary":"Sector assigned to drone_1 at (8.75, 16.5) radius of 2.0. Status set to SEARCHING."}'}], 'structuredContent': {'summary': 'Sector assigned to drone_1 at (8.75, 16.5) radius of 2.0. Status set to SEARCHING.'}, 'isError': False}
 
-[TICK 0] [00:15:07]
-TOOL CALL (swarm_dispatcher): allocate_drone_sector({"drone_id": "drone_2", "center_x": 3.5, "center_y": 4.5, "radius": 1.5})
+[TICK 0] [02:20:05]
+TOOL CALL (swarm_dispatcher): end_turn({})
 
-[TICK 0] [00:15:07]
-TOOL RESPONSE (swarm_dispatcher): allocate_drone_sector -> {'content': [{'type': 'text', 'text': '{"summary":"Sector assigned to drone_2 at (3.5, 4.5) radius of 1.5. Status set to SEARCHING."}'}], 'structuredContent': {'summary': 'Sector assigned to drone_2 at (3.5, 4.5) radius of 1.5. Status set to SEARCHING.'}, 'isError': False}
-
-[TICK 0] [00:15:10]
-TOOL CALL (swarm_dispatcher): allocate_drone_sector({"drone_id": "drone_3", "center_x": 5.5, "center_y": 2.0, "radius": 2})
-
-[TICK 0] [00:15:10]
-TOOL RESPONSE (swarm_dispatcher): allocate_drone_sector -> {'content': [{'type': 'text', 'text': '{"summary":"Sector assigned to drone_3 at (5.5, 2.0) radius of 2.0. Status set to SEARCHING."}'}], 'structuredContent': {'summary': 'Sector assigned to drone_3 at (5.5, 2.0) radius of 2.0. Status set to SEARCHING.'}, 'isError': False}
-
-[TICK 0] [00:15:14]
-TOOL CALL (swarm_dispatcher): swarm_dispatcher({"action": "All drones have been assigned sectors and are searching for survivors. No new assignments are needed at this time."})
-
-[TICK 0] [00:15:14]
-CRITICAL ERROR: Tool 'swarm_dispatcher' not found.
+[TICK 0] [02:20:05]
+CRITICAL ERROR: Tool 'end_turn' not found.
 Available tools: get_current_mission_status, evaluate_sector_overlap, allocate_drone_sector
 
 Possible causes:

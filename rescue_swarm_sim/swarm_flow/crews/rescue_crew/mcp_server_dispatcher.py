@@ -69,7 +69,7 @@ def get_current_mission_status() -> dict:
     result = {
         "mission state": mission,
         "drones status": drones,
-        "buildings": buildings,
+        # CHERRY-PICK: We removed the massive "buildings" array here to save context!
         "unsearched buildings": unsearched,
         "summary": f"Mission: {found_survivors}/{total_survivors} survivors found, {len(drones)} drones active, {len(unsearched)} buildings unsearched."
     }

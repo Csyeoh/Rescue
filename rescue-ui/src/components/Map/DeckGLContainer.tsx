@@ -332,11 +332,26 @@ export default function DeckGLContainer({
       {selectedSurvivorId !== null && (
         <SurvivorMic
           survivorId={selectedSurvivorId}
-          onIntelReceived={(intel) => {
-            console.log("INTEL EXTRACTED FROM GEMINI:", intel);
-            // Alert for testing; replace with your Toast UI later!
-            alert(`Intel Received! \nUrgency: ${intel.urgency_level}\nNeeds: ${intel.requested_supplies.join(', ')}`);
-            setSelectedSurvivorId(null); // Close mic after successful submission
+          
+          onIntelReceived={(intelData) => {
+            console.log("INTEL RECEIVED:", intelData);
+            const intel = intelData.intel;
+            
+            // Check if medical_needs is an array before joining; otherwise show the raw value or 'None'
+            const medNeeds = Array.isArray(intel?.medical_needs) 
+              ? intel.medical_needs.join(', ') 
+              : (intel?.medical_needs || 'None');
+
+            const supplies = Array.isArray(intel?.requested_supplies)
+              ? intel.requested_supplies.join(', ')
+              : (intel?.requested_supplies || 'None');
+
+            alert(
+              `Intel Received!\n` +
+              `Urgency: ${intel?.urgency_level || 'UNKNOWN'}\n` +
+              `Medical Needs: ${medNeeds}\n` +
+              `Supplies: ${supplies}`
+            );
           }}
         />
       )}
