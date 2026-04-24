@@ -58,11 +58,19 @@ def get_navigation_step(drone_id: str, target_x: float, target_y: float) -> dict
         if check_dist == 0: return False
         n_ux, n_uy = dx / check_dist, dy / check_dist
         
-        for d in [check_dist * 0.5, check_dist]:
+        # Convert known blockers into a set of integer grid tiles for fast lookup
+        # Blockers are stored at their centers (e.g., 8.5, 4.5), so int() gets the tile (8, 4)
+        blocker_tiles = {(int(ox), int(oy)) for ox, oy in blockers}
+
+        # Raycast along the intended path in small 0.2 unit increments
+        steps = int(check_dist / 0.2) + 1
+        for i in range(1, steps + 1):
+            d = min(i * 0.2, check_dist)
             px, py = cx + n_ux * d, cy + n_uy * d
-            for ox, oy in blockers:
-                if math.hypot(px - ox, py - oy) < 0.25:
-                    return True
+            
+            # If the point falls into a tile that contains a blocker, the path is dead
+            if (int(px), int(py)) in blocker_tiles:
+                return True
         return False
 
     best_dx, best_dy = ux * step_mag, uy * step_mag
