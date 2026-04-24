@@ -9,3 +9,4 @@ export { createThermalLayer }       from './thermalLayer';
 export { createBaseLayer }          from './baseLayer';
 export { createGroundLayer }        from './groundLayer';
 export { createCoverageLayer }      from './coverageLayer';
+export { createSectorLayer }        from './sectorLayer';

@@ -21,8 +21,11 @@ import {
   createThermalLayer,
   createBaseLayer,
   createGroundLayer,
+  createSectorLayer,
   createCoverageLayer,
 } from '../../scene/layers';
+
+import SurvivorMic from '../UI/SurvivorMic';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -31,13 +34,14 @@ import {
 interface DeckGLContainerProps {
   environmentState: EnvironmentState;
   drones: DroneStatus[];
-  coverage: {x: number, y: number}[];
+  coverage: { x: number, y: number }[];
   mode: 'god' | 'drone';
   showCoords: boolean;
   isNightMode: boolean;
   showXRay: boolean;
+  showSectors: boolean;
   selectedSurvivorId?: string | null;
-  }
+}
 
 // ---------------------------------------------------------------------------
 // Drone GLB model path.
@@ -117,9 +121,11 @@ export default function DeckGLContainer({
   showCoords,
   isNightMode,
   showXRay,
+  showSectors,
   selectedSurvivorId = null
 }: DeckGLContainerProps) {
   const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null);
+  const [selectedSurvivorId, setSelectedSurvivorId] = useState<number | null>(null);
   const [time, setTime] = useState(0);
 
   // ── Animation Loop ──
@@ -146,7 +152,7 @@ export default function DeckGLContainer({
     return [
       // 0. Base ground plane below everything
       ...createGroundLayer({ ground: theme.ground, grid: theme.grid }),
-      
+
       // 0.5 Coverage layer (Fog of War)
       createCoverageLayer(coverage),
 
@@ -166,11 +172,12 @@ export default function DeckGLContainer({
       }),
 
       // 3. Base station beacon
-      createBaseLayer(environmentState.bases, { color: theme.base, line: theme.baseLine }),
+      createBaseLayer({ color: theme.base, line: theme.baseLine }),
 
       // 4. Flight trails and Sectors
       createTrailLayer(drones),
-      
+      createSectorLayer(environmentState.sectors, time, showSectors),
+
       // 5. Drone 3D models
       createDroneLayer(drones, DRONE_MODEL_URL, theme.drone),
 
@@ -203,7 +210,7 @@ export default function DeckGLContainer({
         outlineColor: [0, 0, 0, 128],
       }),
     ];
-  }, [buildingData, obstacleData, thermalData, survivorData, drones, hoveredBuildingId, time, showCoords, isNightMode, selectedSurvivorId]);
+  }, [buildingData, obstacleData, thermalData, survivorData, drones, environmentState.sectors, hoveredBuildingId, time, showCoords,showSectors, isNightMode, selectedSurvivorId]);
 
   // ── Lighting Rig ──
   const effect = useMemo(() => createLightingEffect(isNightMode), [isNightMode]);
@@ -227,6 +234,17 @@ export default function DeckGLContainer({
         effects={[effect]}
         layers={layers}
         getCursor={() => 'default'}
+
+        onClick={(info) => {
+          if (info.layer?.id === 'survivors' && info.object) {
+            // Assuming your survivor object has an 'id'. If it uses index, use info.index.
+            setSelectedSurvivorId(info.object.id || info.index);
+          } else {
+            // Clicked somewhere else, dismiss the mic
+            setSelectedSurvivorId(null);
+          }
+        }}
+
         getTooltip={(info) => {
           if (!info || !info.object) return null;
           const { object, layer, coordinate } = info;
@@ -255,12 +273,10 @@ export default function DeckGLContainer({
               displayY = object.center[1].toFixed(2);
               break;
             case 'base-station':
-              const bx = object.x || 9.5;
-              const by = object.y || 9.5;
-              const baseDrones = drones.filter(d => Math.hypot(d.x - bx, d.y - by) < 1.0).length;
+              const baseDrones = drones.filter(d => Math.hypot(d.x - 9.5, d.y - 9.5) < 1.0).length;
               title = 'Base Station';
-              displayX = bx.toFixed(2);
-              displayY = by.toFixed(2);
+              displayX = '9.50';
+              displayY = '9.50';
               content = `
                 <div class="flex flex-col gap-1 mt-1">
                   <div class="flex justify-between gap-4"><span>Drones docked:</span><span class="font-bold text-azure-mid">${baseDrones}</span></div>
@@ -319,6 +335,35 @@ export default function DeckGLContainer({
           }
         }}
       />
+
+      {/* 2. RENDER THE MIC UI WHEN A SURVIVOR IS SELECTED */}
+      {selectedSurvivorId !== null && (
+        <SurvivorMic
+          survivorId={selectedSurvivorId}
+          
+          onIntelReceived={(intelData) => {
+            console.log("INTEL RECEIVED:", intelData);
+            const intel = intelData.intel;
+            
+            // Check if medical_needs is an array before joining; otherwise show the raw value or 'None'
+            const medNeeds = Array.isArray(intel?.medical_needs) 
+              ? intel.medical_needs.join(', ') 
+              : (intel?.medical_needs || 'None');
+
+            const supplies = Array.isArray(intel?.requested_supplies)
+              ? intel.requested_supplies.join(', ')
+              : (intel?.requested_supplies || 'None');
+
+            alert(
+              `Intel Received!\n` +
+              `Urgency: ${intel?.urgency_level || 'UNKNOWN'}\n` +
+              `Medical Needs: ${medNeeds}\n` +
+              `Supplies: ${supplies}`
+            );
+          }}
+        />
+      )}
+
     </div>
   );
 }
