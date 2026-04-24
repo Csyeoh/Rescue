@@ -350,6 +350,7 @@ export default function DeckGLContainer({
       {/* 2. RENDER THE MIC UI WHEN A SURVIVOR IS SELECTED */}
       {selectedMicSurvivorId !== null && (
         <SurvivorMic
+          droneId={drones[0]?.id ?? "drone_1"}
           survivorId={selectedMicSurvivorId}
           
           onIntelReceived={(intelData) => {
@@ -372,6 +373,7 @@ export default function DeckGLContainer({
               `Supplies: ${supplies}`
             );
           }}
+          onResolve={() => setSelectedMicSurvivorId(null)}
         />
       )}
 

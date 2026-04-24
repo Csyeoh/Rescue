@@ -235,7 +235,7 @@ export default function DeckApp() {
                 'SYSTEM', 
                 logMessage, 
                 logType, 
-                { type: 'info', details: JSON.stringify(intel, null, 2) }
+                { type: 'tool_response', details: JSON.stringify(intel, null, 2) }
               );
             }}
             onResolve={() => setActiveTriage(null)} 

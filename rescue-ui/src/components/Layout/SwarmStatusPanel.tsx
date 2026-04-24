@@ -376,7 +376,7 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
                                           {intel.requested_supplies?.length > 0 ? intel.requested_supplies.join(', ') : 'None'}
                                         </div>
                                         <div className="mt-1 pt-1 border-t border-white/10 text-[10px] text-white/40 italic line-clamp-2">
-                                          "{intel.transcription}"
+                                          &quot;{intel.transcription}&quot;
                                         </div>
                                     </div>
                                   ) : (
