@@ -1,6 +1,7 @@
 import math
 import json
 import sys
+import random
 import db
 
 from mesa import Agent, Model
@@ -46,18 +47,20 @@ def cluster_tiles(tiles):
 
 class ObstacleAgent(Agent):
     """Represents an impassable terrain feature (rubble, collapsed structure)."""
-    def __init__(self, unique_id, model):
+    def __init__(self, unique_id, model, height: float):
         super().__init__(unique_id, model)
         self.discovered = False
+        self.height = float(height)
 
     def step(self): pass
 
 
 class BuildingAgent(Agent):
     """Represents a searchable building cell that may contain survivors."""
-    def __init__(self, unique_id, model):
+    def __init__(self, unique_id, model, height: float):
         super().__init__(unique_id, model)
         self.revealed = False
+        self.height = float(height)
     def step(self): pass
 
 
@@ -91,6 +94,7 @@ class DroneAgent(Agent):
         super().__init__(unique_id, model)
         self.battery = battery
         self.status = "IDLE"
+        self.z = 1.1
         self.task_queue = []   # replaces assigned_sector
         self.messages_for_commander = []
         self.error_count = 0
@@ -126,20 +130,21 @@ class DroneAgent(Agent):
             pos_txt = f" at {pos[0]:.2f},{pos[1]:.2f}" if pos else ""
             self.model.log_action(self.unique_id, f"DRONE LOST: battery exhausted{pos_txt}.")
 
-    def move(self, dx: float, dy: float):
-        """Move by a delta vector clamped to exactly 1.0 unit magnitude."""
+    def move(self, dx: float, dy: float, dz: float = 0.0):
+        """Move by a 3D delta vector clamped to exactly 1.0 unit magnitude (Z handled independently)."""
         if self.is_destroyed:
             return
-        mag = math.hypot(dx, dy)
+        mag = math.sqrt(dx * dx + dy * dy + dz * dz)
         if mag == 0:
             return
         if mag > 1.0:
-            dx, dy = dx / mag, dy / mag   # normalise to unit vector
+            dx, dy, dz = dx / mag, dy / mag, dz / mag   # normalise to unit vector
 
         nx = max(0.0, min(19.99, self.pos[0] + dx))
         ny = max(0.0, min(19.99, self.pos[1] + dy))
         self.model.space.move_agent(self, (nx, ny))
-        self.battery -= 2
+        self.z = max(0.2, min(6.0, self.z + dz))
+        self.battery -= 3 if dz > 0 else 2
 
 
 # ---------------------------------------------------------------------------
@@ -175,10 +180,23 @@ class DisasterZoneModel(Model):
         survivors = map_data.get("survivors", [])
         self.bases = map_data.get("bases", [{"x": 9, "y": 9}])
 
+        def terrain_height(kind: str, ix: int, iy: int, provided: float | None) -> float:
+            if provided is not None:
+                try:
+                    return float(provided)
+                except Exception:
+                    pass
+            seed = (ix * 73856093) ^ (iy * 19349663) ^ (0xB11D if kind == "building" else 0x0B57)
+            rng = random.Random(seed)
+            if kind == "building":
+                return round(rng.uniform(1.2, 3.8), 2)
+            return round(rng.uniform(0.6, 2.6), 2)
+
         for c in obstacles:
             ix, iy = int(c["x"]), int(c["y"])
             location = (ix + 0.5, iy + 0.5)
-            agent = ObstacleAgent(f"obs_{ix}_{iy}", self)
+            h = terrain_height("obstacle", ix, iy, c.get("height"))
+            agent = ObstacleAgent(f"obs_{ix}_{iy}", self, height=h)
             self.space.place_agent(agent, location)
             self.obstacle_map[(ix, iy)] = agent
 
@@ -186,7 +204,8 @@ class DisasterZoneModel(Model):
             ix, iy = int(b["x"]), int(b["y"])
             if (ix, iy) not in self.building_map:
                 location = (ix + 0.5, iy + 0.5)
-                agent = BuildingAgent(f"bld_{ix}_{iy}", self)
+                h = terrain_height("building", ix, iy, b.get("height"))
+                agent = BuildingAgent(f"bld_{ix}_{iy}", self, height=h)
                 self.space.place_agent(agent, location)
                 self.building_map[(ix, iy)] = agent
 
@@ -198,10 +217,9 @@ class DisasterZoneModel(Model):
             self.building_clusters.append(BuildingCluster(f"cluster_{i}", cx, cy, cluster))
 
         # ── Place drones at bases ──────────────────────────
-        num_bases = len(self.bases)
+        base = {"x": 9, "y": 9}
         for i in range(config.get("num_drones", 5)):
             drone = DroneAgent(f"drone_{i+1}", self, config.get("drone_battery", 100))
-            base = self.bases[i % num_bases]
             self.space.place_agent(drone, (base["x"] + 0.5, base["y"] + 0.5))
             self.schedule.add(drone)
 
@@ -231,17 +249,17 @@ class DisasterZoneModel(Model):
 
     def sync_to_db(self):
         drone_data = [
-            (d.unique_id, d.pos[0], d.pos[1], d.battery, d.status,
+            (d.unique_id, d.pos[0], d.pos[1], getattr(d, "z", 1.8), d.battery, d.status,
              int(d.is_destroyed), json.dumps(d.task_queue), 
              json.dumps(d.messages_for_commander), d.error_count, json.dumps(d.thermal_memory))
             for d in self.schedule.agents if isinstance(d, DroneAgent)
         ]
         obstacle_data = [
-            (a.unique_id, a.pos[0], a.pos[1], int(a.discovered))
+            (a.unique_id, a.pos[0], a.pos[1], float(getattr(a, "height", 1.2)), int(a.discovered))
             for a in self.obstacle_map.values()
         ]
         building_data = [
-            (a.unique_id, a.pos[0], a.pos[1], int(a.revealed))
+            (a.unique_id, a.pos[0], a.pos[1], float(getattr(a, "height", 1.6)), int(a.revealed))
             for a in self.building_map.values()
         ]
         survivor_data = []
@@ -339,28 +357,48 @@ class DisasterZoneModel(Model):
                 if drone.status in ["SEARCHING", "RETURNING"]:
                     dx = float(intent.get("dx", 0.0))
                     dy = float(intent.get("dy", 0.0))
+                    dz = float(intent.get("dz", 0.0))
 
-                    if math.hypot(dx, dy) > 0:
+                    if math.sqrt(dx * dx + dy * dy + dz * dz) > 0:
+                        cruise_z = 1.1
+                        clearance = 0.35
+                        max_z = 6.0
                         # Tile-based Collision Check (Robust)
+                        mag = math.sqrt(dx * dx + dy * dy + dz * dz)
+                        if mag > 1.0:
+                            dx, dy, dz = dx / mag, dy / mag, dz / mag
+
                         nx, ny = drone.pos[0] + dx, drone.pos[1] + dy
                         tx, ty = int(nx), int(ny)
                         # Check maps for any blocking agent in the target integer tile
                         collision_agent = self.obstacle_map.get((tx, ty)) or self.building_map.get((tx, ty))
                         
                         if collision_agent:
-                            drone.status = "CRASHED"
-                            drone.is_destroyed = True
-                            agent_type = "building" if isinstance(collision_agent, BuildingAgent) else "obstacle"
-                            if not getattr(drone, "destroy_reason", None):
-                                drone.destroy_reason = f"CRASHED_INTO_{agent_type.upper()}_TILE ({tx},{ty})"
-                                drone.destroy_tick = self.tick_count
-                            fx, fy = drone.pos[0], drone.pos[1]
-                            self.log_action(
-                                d_id,
-                                f"DRONE LOST: fatal crash. attempted move dx={dx:.2f},dy={dy:.2f} from {fx:.2f},{fy:.2f} into {agent_type} tile ({tx},{ty})."
-                            )
+                            hit_height = float(getattr(collision_agent, "height", 1.2))
+                            required_z = hit_height + clearance
+                            if required_z > max_z:
+                                drone.status = "CRASHED"
+                                drone.is_destroyed = True
+                                agent_type = "building" if isinstance(collision_agent, BuildingAgent) else "obstacle"
+                                if not getattr(drone, "destroy_reason", None):
+                                    drone.destroy_reason = f"ALTITUDE_LIMIT_EXCEEDED_OVER_{agent_type.upper()} ({tx},{ty})"
+                                    drone.destroy_tick = self.tick_count
+                                fx, fy = drone.pos[0], drone.pos[1]
+                                self.log_action(
+                                    d_id,
+                                    f"DRONE LOST: cannot clear {agent_type} tile ({tx},{ty}) height={hit_height:.2f} with max_z={max_z:.2f}."
+                                )
+                            else:
+                                current_z = float(getattr(drone, "z", cruise_z))
+                                if current_z < required_z:
+                                    drone.move(0.0, 0.0, required_z - current_z)
+                                else:
+                                    drone.move(dx, dy, dz)
                         else:
-                            drone.move(dx, dy)
+                            current_z = float(getattr(drone, "z", cruise_z))
+                            if abs(dz) < 1e-6 and current_z > cruise_z + clearance:
+                                dz = -min(0.5, current_z - cruise_z)
+                            drone.move(dx, dy, dz)
 
                     # Reveal area within 1.0-unit radius using ContinuousSpace
                     nearby = self.space.get_neighbors(drone.pos, radius=1.0, include_center=True)

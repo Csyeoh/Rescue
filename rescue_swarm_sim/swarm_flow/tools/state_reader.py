@@ -20,13 +20,13 @@ def get_current_map_state() -> dict:
 
     # ── Terrain ─────────────────────────────────────────────────────────────
     obstacles = [
-        {"id": a.unique_id, "x": a.pos[0], "y": a.pos[1], "discovered": a.discovered}
+        {"id": a.unique_id, "x": a.pos[0], "y": a.pos[1], "height": getattr(a, "height", 1.2), "discovered": a.discovered}
         for a in world.obstacle_map.values()
     ]
 
     buildings = [
         {"id": a.unique_id, "x": a.pos[0], "y": a.pos[1],
-         "revealed": a.revealed}
+         "height": getattr(a, "height", 1.6), "revealed": a.revealed}
         for a in world.building_map.values()
     ]
 
@@ -38,6 +38,7 @@ def get_current_map_state() -> dict:
                 "id": agent.unique_id,
                 "x": agent.pos[0],
                 "y": agent.pos[1],
+                "z": getattr(agent, "z", 1.8),
                 "battery": agent.battery,
                 "status": agent.status,
             })
@@ -89,6 +90,7 @@ def get_dispatcher_state() -> dict:
                 "id": agent.unique_id,
                 "x": agent.pos[0],
                 "y": agent.pos[1],
+                "z": getattr(agent, "z", 1.8),
                 "battery": agent.battery,
                 "status": agent.status,
             })

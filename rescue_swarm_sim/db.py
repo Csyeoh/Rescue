@@ -15,7 +15,7 @@ def init_db():
     cursor.execute("""
         CREATE TABLE drones (
             id TEXT PRIMARY KEY,
-            x REAL, y REAL,
+            x REAL, y REAL, z REAL,
             battery INTEGER,
             status TEXT,
             is_destroyed INTEGER,
@@ -31,6 +31,7 @@ def init_db():
         CREATE TABLE obstacles (
             id TEXT PRIMARY KEY,
             x REAL, y REAL,
+            height REAL,
             discovered INTEGER DEFAULT 0
         )
     """)
@@ -40,6 +41,7 @@ def init_db():
         CREATE TABLE buildings (
             id TEXT PRIMARY KEY,
             x REAL, y REAL,
+            height REAL,
             revealed INTEGER DEFAULT 0
         )
     """)
@@ -115,9 +117,9 @@ def get_db_conn():
 def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_data, survivor_data):
     """
     Batch upsert for the entire simulation state.
-    drone_data:    [(id, x, y, battery, status, is_destroyed, task_queue, messages_for_commander, error_count, thermal_memory), ...]
-    obstacle_data: [(id, x, y, discovered), ...]
-    building_data: [(id, x, y, revealed), ...]
+    drone_data:    [(id, x, y, z, battery, status, is_destroyed, task_queue, messages_for_commander, error_count, thermal_memory), ...]
+    obstacle_data: [(id, x, y, height, discovered), ...]
+    building_data: [(id, x, y, height, revealed), ...]
     building_cluster_data: [(id, cx, cy, revealed, tile_count, assigned_to), ...]
     survivor_data: [(id, x, y, found, found_tick), ...]
     """
@@ -127,17 +129,17 @@ def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_
     try:
         if drone_data:
             cursor.executemany(
-                "INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 drone_data
             )
         if obstacle_data:
             cursor.executemany(
-                "INSERT OR REPLACE INTO obstacles VALUES (?,?,?,?)",
+                "INSERT OR REPLACE INTO obstacles VALUES (?,?,?,?,?)",
                 obstacle_data
             )
         if building_data:
             cursor.executemany(
-                "INSERT OR REPLACE INTO buildings VALUES (?,?,?,?)",
+                "INSERT OR REPLACE INTO buildings VALUES (?,?,?,?,?)",
                 building_data
             )
         if building_cluster_data:

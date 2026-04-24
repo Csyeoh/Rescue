@@ -15,6 +15,7 @@ export const initializeEnvironmentState = (map_data: any): EnvironmentState => {
       x: Number(c.x),
       y: Number(c.y),
       discovered: Boolean(c.discovered),
+      height: c.height !== undefined && c.height !== null ? Number(c.height) : undefined,
     });
   }
 
@@ -24,6 +25,7 @@ export const initializeEnvironmentState = (map_data: any): EnvironmentState => {
       x: Number(b.x),
       y: Number(b.y),
       revealed: Boolean(b.revealed),
+      height: b.height !== undefined && b.height !== null ? Number(b.height) : undefined,
     });
   }
 

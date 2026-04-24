@@ -11,7 +11,6 @@ from pydantic import BaseModel, Field
 from google.adk import Agent
 from google.adk.agents.parallel_agent import ParallelAgent
 from google.adk.tools.mcp_tool import McpToolset, StdioConnectionParams
-from google.adk.models import LiteLlm, Gemini
 from google.adk.planners import BuiltInPlanner
 from google.genai import types
 from mcp.client.stdio import StdioServerParameters
@@ -23,8 +22,9 @@ from .drone_tools import get_navigation_step
 
 class DroneIntent(BaseModel):
     drone_id: str  = Field(default="", description="The ID of the drone")
-    dx: float      = Field(0.0, description="Movement delta X (-1.0 to 1.0). Combined magnitude with dy must be ≤ 1.0.")
-    dy: float      = Field(0.0, description="Movement delta Y (-1.0 to 1.0). Combined magnitude with dx must be ≤ 1.0.")
+    dx: float      = Field(0.0, description="Movement delta X (-1.0 to 1.0). Combined 3D magnitude with dy,dz must be ≤ 1.0.")
+    dy: float      = Field(0.0, description="Movement delta Y (-1.0 to 1.0). Combined 3D magnitude with dx,dz must be ≤ 1.0.")
+    dz: float      = Field(0.0, description="Movement delta Z (-1.0 to 1.0). Positive climbs, negative descends. Combined 3D magnitude with dx,dy must be ≤ 1.0.")
     summary: str   = Field(default="", description="A brief summary of the drone's current state and surroundings.")
 
 class RescueCrew:

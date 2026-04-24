@@ -91,6 +91,7 @@ export default function DeckApp() {
           showCoords={showCoords}
           isNightMode={isNightMode}
           showXRay={showXRay}
+          showSectors={false}
           selectedSurvivorId={selectedSurvivorId}
         />
       </div>

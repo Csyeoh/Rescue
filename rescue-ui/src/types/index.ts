@@ -1,8 +1,8 @@
 export interface EntityCoord { x: number; y: number; }
 
-export interface BuildingNode extends EntityCoord { revealed: boolean; }
+export interface ObstacleNode extends EntityCoord { discovered: boolean; height?: number; }
 
-export interface ObstacleNode extends EntityCoord { discovered: boolean; }
+export interface BuildingNode extends EntityCoord { revealed: boolean; height?: number; }
 
 export interface SurvivorNode extends EntityCoord {
   id: string;
@@ -21,12 +21,20 @@ export interface ThermalScanNode {
   createdAt?: number;
 }
 
+export interface SectorData {
+  drone_id: string;
+  cx: number;
+  cy: number;
+  radius: number;
+}
+
 export interface EnvironmentState {
   buildings: BuildingNode[];
   obstacles: ObstacleNode[];
   survivors: SurvivorNode[];
   thermalScans: ThermalScanNode[];
   bases: EntityCoord[];
+  sectors?: SectorData[];
 }
 
 export interface DroneStatus {
@@ -35,6 +43,7 @@ export interface DroneStatus {
   status: 'searching' | 'returning' | 'charging' | 'idle';
   x: number;
   y: number;
+  z?: number;
   stepsTaken: number;
   heading?: number;                    // yaw in degrees, derived from movement vector
   velocityMag?: number;                // speed magnitude, used for pitch tilt
@@ -56,7 +65,7 @@ export interface LogEntry {
   message: string;
   type: 'info' | 'warning' | 'success' | 'error' | 'reasoning' | 'tool_call' | 'tool_response';
   details?: {
-    type?: 'reasoning' | 'tool_call' | 'tool_response';
+    type?: 'reasoning' | 'tool_call' | 'tool_response' | 'tool_execution';
     // Reasoning
     thought?: string;          // sentence under [THOUGHT: True]
     // Tool call / response

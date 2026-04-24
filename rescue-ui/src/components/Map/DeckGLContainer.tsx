@@ -122,10 +122,10 @@ export default function DeckGLContainer({
   isNightMode,
   showXRay,
   showSectors,
-  selectedSurvivorId = null
+  selectedSurvivorId: selectedSurvivorIdProp = null
 }: DeckGLContainerProps) {
   const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null);
-  const [selectedSurvivorId, setSelectedSurvivorId] = useState<number | null>(null);
+  const [selectedMicSurvivorId, setSelectedMicSurvivorId] = useState<number | null>(null);
   const [time, setTime] = useState(0);
 
   // ── Animation Loop ──
@@ -158,7 +158,7 @@ export default function DeckGLContainer({
 
       // 1. Transient scans and Survivors
       createThermalLayer(thermalData, time),
-      createSurvivorLayer(survivorData, theme.survivor, selectedSurvivorId),
+      createSurvivorLayer(survivorData, theme.survivor, selectedSurvivorIdProp),
 
       // 2. Static environment
       createBuildingLayer(buildingData, hoveredBuildingId, {
@@ -210,7 +210,7 @@ export default function DeckGLContainer({
         outlineColor: [0, 0, 0, 128],
       }),
     ];
-  }, [buildingData, obstacleData, thermalData, survivorData, drones, environmentState.sectors, hoveredBuildingId, time, showCoords,showSectors, isNightMode, selectedSurvivorId]);
+  }, [buildingData, obstacleData, thermalData, survivorData, drones, environmentState.sectors, hoveredBuildingId, time, showCoords,showSectors, isNightMode, selectedSurvivorIdProp]);
 
   // ── Lighting Rig ──
   const effect = useMemo(() => createLightingEffect(isNightMode), [isNightMode]);
@@ -237,11 +237,22 @@ export default function DeckGLContainer({
 
         onClick={(info) => {
           if (info.layer?.id === 'survivors' && info.object) {
-            // Assuming your survivor object has an 'id'. If it uses index, use info.index.
-            setSelectedSurvivorId(info.object.id || info.index);
+            const rawId = (info.object as any)?.id;
+            let numericId: number | null = null;
+            if (typeof rawId === 'number') {
+              numericId = rawId;
+            } else if (typeof rawId === 'string') {
+              const digits = rawId.replace(/[^\d]/g, '');
+              const parsed = digits ? Number(digits) : NaN;
+              numericId = Number.isFinite(parsed) ? parsed : null;
+            }
+            if (numericId === null && typeof (info as any).index === 'number') {
+              numericId = (info as any).index;
+            }
+            setSelectedMicSurvivorId(numericId);
           } else {
             // Clicked somewhere else, dismiss the mic
-            setSelectedSurvivorId(null);
+            setSelectedMicSurvivorId(null);
           }
         }}
 
@@ -337,9 +348,9 @@ export default function DeckGLContainer({
       />
 
       {/* 2. RENDER THE MIC UI WHEN A SURVIVOR IS SELECTED */}
-      {selectedSurvivorId !== null && (
+      {selectedMicSurvivorId !== null && (
         <SurvivorMic
-          survivorId={selectedSurvivorId}
+          survivorId={selectedMicSurvivorId}
           
           onIntelReceived={(intelData) => {
             console.log("INTEL RECEIVED:", intelData);
