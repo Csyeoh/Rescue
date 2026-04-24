@@ -22,9 +22,20 @@ def init_db():
             task_queue TEXT,
             messages_for_commander TEXT,
             error_count INTEGER DEFAULT 0,
-            thermal_memory TEXT
+            thermal_memory TEXT,
+            target_x REAL,
+            target_y REAL,
+            waypoints TEXT
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE mission_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    cursor.execute("INSERT INTO mission_metadata (key, value) VALUES ('mission_failed', '0')")
 
     # Static terrain obstacles (impassable rubble/collapse)
     cursor.execute("""
@@ -109,7 +120,7 @@ def get_db_conn():
 def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_data, survivor_data):
     """
     Batch upsert for the entire simulation state.
-    drone_data:    [(id, x, y, battery, status, is_destroyed, task_queue, messages_for_commander, error_count, thermal_memory), ...]
+    drone_data:    [(id, x, y, battery, status, is_destroyed, task_queue, messages_for_commander, error_count, thermal_memory, target_x, target_y, waypoints), ...]
     obstacle_data: [(id, x, y, discovered), ...]
     building_data: [(id, x, y, revealed), ...]
     building_cluster_data: [(id, cx, cy, revealed, tile_count, assigned_to), ...]
@@ -121,7 +132,7 @@ def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_
     try:
         if drone_data:
             cursor.executemany(
-                "INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 drone_data
             )
         if obstacle_data:

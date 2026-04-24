@@ -232,7 +232,8 @@ class DisasterZoneModel(Model):
         drone_data = [
             (d.unique_id, d.pos[0], d.pos[1], d.battery, d.status,
              int(d.is_destroyed), json.dumps(d.task_queue), 
-             json.dumps(d.messages_for_commander), d.error_count, json.dumps(d.thermal_memory))
+             json.dumps(d.messages_for_commander), d.error_count, json.dumps(d.thermal_memory),
+             getattr(d, "target_x", None), getattr(d, "target_y", None), json.dumps(getattr(d, "waypoints", [])))
             for d in self.schedule.agents if isinstance(d, DroneAgent)
         ]
         obstacle_data = [
@@ -289,7 +290,7 @@ class DisasterZoneModel(Model):
         # 1. Sync status / queues from DB (source of truth for agent decisions)
         conn = db.get_db_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, status, task_queue, messages_for_commander, error_count, thermal_memory FROM drones")
+        cursor.execute("SELECT id, status, task_queue, messages_for_commander, error_count, thermal_memory, x, y, is_destroyed, target_x, target_y, waypoints FROM drones")
         drone_rows = {r[0]: r for r in cursor.fetchall()}
         for agent in self.schedule.agents:
             if isinstance(agent, DroneAgent) and agent.unique_id in drone_rows:
@@ -299,6 +300,17 @@ class DisasterZoneModel(Model):
                 agent.messages_for_commander = json.loads(r[3]) if r[3] else []
                 agent.error_count = r[4]
                 agent.thermal_memory = json.loads(r[5]) if r[5] else []
+                
+                # Update position from DB (final destination of the waypoints)
+                agent.model.space.move_agent(agent, (r[6], r[7]))
+                agent.is_destroyed = bool(r[8])
+                agent.target_x = r[9]
+                agent.target_y = r[10]
+                agent.waypoints = json.loads(r[11]) if r[11] else []
+
+        # 1.5 Clear consumed waypoints from DB to prevent staling
+        cursor.execute("UPDATE drones SET waypoints=NULL, target_x=NULL, target_y=NULL")
+        conn.commit()
 
         # 2. Sync building revealed from DB
         cursor.execute("SELECT id, revealed FROM buildings")
@@ -315,85 +327,23 @@ class DisasterZoneModel(Model):
             if bc.id in cluster_assignment:
                 bc.assigned_to = cluster_assignment[bc.id]
 
+        # 2.5 Check for mission failure flag
+        cursor.execute("SELECT value FROM mission_metadata WHERE key='mission_failed'")
+        mf_row = cursor.fetchone()
+        if mf_row and mf_row[0] == '1':
+            self.mission_failed = True
+
         conn.close()
 
-        # 3. Apply drone intents
-        if batch_intents:
-            for d_id, intent in batch_intents.items():
-                drone = next(
-                    (a for a in self.schedule.agents
-                     if isinstance(a, DroneAgent) and a.unique_id == d_id),
-                    None
-                )
-                if not drone or drone.is_destroyed:
-                    continue
-
+        # 3. Apply drone intents (REMOVED: Now handled by tool call waypoints)
+        for agent in self.schedule.agents:
+            if isinstance(agent, DroneAgent) and not agent.is_destroyed:
                 self.step_logs.append({
                     "step": self.tick_count,
-                    "drone_id": d_id,
-                    "pos": drone.pos,
-                    "status": drone.status,
+                    "drone_id": agent.unique_id,
+                    "pos": agent.pos,
+                    "status": agent.status,
                 })
-
-                if drone.status in ["SEARCHING", "RETURNING"]:
-                    dx = float(intent.get("dx", 0.0))
-                    dy = float(intent.get("dy", 0.0))
-
-                    if math.hypot(dx, dy) > 0:
-                        # Tile-based Collision Check (Robust)
-                        nx, ny = drone.pos[0] + dx, drone.pos[1] + dy
-                        tx, ty = int(nx), int(ny)
-                        # Check maps for any blocking agent in the target integer tile
-                        collision_agent = self.obstacle_map.get((tx, ty)) or self.building_map.get((tx, ty))
-                        
-                        if collision_agent:
-                            drone.status = "CRASHED"
-                            drone.is_destroyed = True
-                            agent_type = "building" if isinstance(collision_agent, BuildingAgent) else "obstacle"
-                            if not getattr(drone, "destroy_reason", None):
-                                drone.destroy_reason = f"CRASHED_INTO_{agent_type.upper()}_TILE ({tx},{ty})"
-                                drone.destroy_tick = self.tick_count
-                            fx, fy = drone.pos[0], drone.pos[1]
-                            self.log_action(
-                                d_id,
-                                f"DRONE LOST: fatal crash. attempted move dx={dx:.2f},dy={dy:.2f} from {fx:.2f},{fy:.2f} into {agent_type} tile ({tx},{ty})."
-                            )
-                        else:
-                            drone.move(dx, dy)
-
-                    # Reveal area within 1.0-unit radius using ContinuousSpace
-                    nearby = self.space.get_neighbors(drone.pos, radius=1.0, include_center=True)
-                    
-                    revealed_cells = []
-                    # Standardized revealed logic: 0.5 unit grid (40x40)
-                    # For each drone, update the coverage cells in its vicinity
-                    # This is a bit brute-force but for 1.0 radius it's only ~16 checks per drone.
-                    cx, cy = drone.pos
-                    r = 1.0
-                    for ix in range(max(0, int((cx - r) * 2)), min(40, int((cx + r) * 2) + 1)):
-                        for iy in range(max(0, int((cy - r) * 2)), min(40, int((cy + r) * 2) + 1)):
-                            # Check distance from drone to cell center
-                            cell_x = ix * 0.5 + 0.25
-                            cell_y = iy * 0.5 + 0.25
-                            if math.hypot(cell_x - cx, cell_y - cy) <= r:
-                                revealed_cells.append((ix, iy))
-
-                    if revealed_cells:
-                        db.sync_coverage(revealed_cells)
-
-                    for obj in nearby:
-                        if isinstance(obj, BuildingAgent):
-                            obj.revealed = True
-                            # Force coverage update for building location
-                            db.sync_coverage([(int(obj.pos[0]*2), int(obj.pos[1]*2))])
-                        elif isinstance(obj, ObstacleAgent):
-                            obj.discovered = True
-                            # Force coverage update for obstacle location
-                            db.sync_coverage([(int(obj.pos[0]*2), int(obj.pos[1]*2))])
-                        elif isinstance(obj, SurvivorAgent) and not obj.found:
-                            obj.found = True
-                            self.found_survivors += 1
-                            self.log_action(d_id, f"Survivor found at {obj.pos}!")
 
         # 4. Mesa schedule step (battery drain / charge)
         self.schedule.step()

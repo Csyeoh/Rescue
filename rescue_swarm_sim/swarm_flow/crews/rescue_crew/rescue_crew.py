@@ -19,17 +19,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from .drone_tools import get_navigation_step, check_task_viability
-
-class DroneIntent(BaseModel):
-    drone_id: str  = Field(default="", description="The ID of the drone")
-    dx: float      = Field(0.0, description="Movement delta X (-1.0 to 1.0). Combined magnitude with dy must be ≤ 1.0.")
-    dy: float      = Field(0.0, description="Movement delta Y (-1.0 to 1.0). Combined magnitude with dx must be ≤ 1.0.")
 
 class RescueCrew:
     def __init__(self):
         self.prompts_path = Path(__file__).parent / 'prompts'
-        self.model = "gemini-2.5-flash-lite"
+        self.model = "gemini-2.5-flash"
         
         # Initialize MCP Servers
         dispatcher_mcp_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "mcp_server_dispatcher.py"))
@@ -96,9 +90,7 @@ class RescueCrew:
                 description=f"Pilot for {drone_id}",
                 instruction=instruction,
                 model=self.model,
-                tools=[drone_mcp_toolset, get_navigation_step, check_task_viability],
-                output_key=f"raw_intent_{drone_id}", 
-                output_schema=DroneIntent,
+                tools=[drone_mcp_toolset],
                 planner=BuiltInPlanner(
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
