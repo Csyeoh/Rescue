@@ -208,13 +208,24 @@ export default function DeckApp() {
             survivorId={activeTriage.survivorId}
             onIntelReceived={(data) => {
               const intel = data.intel;
-              const details = `Med Needs: ${intel.medical_needs?.join(', ') || 'None'}\nSupplies: ${intel.requested_supplies?.join(', ') || 'None'}`;
               
+              // 1. Safely extract arrays into readable strings
+              const needs = intel.medical_needs?.length ? intel.medical_needs.join(', ') : 'None';
+              const supplies = intel.requested_supplies?.length ? intel.requested_supplies.join(', ') : 'None';
+              
+              // 2. Build a highly descriptive, readable summary
+              const logMessage = `[${intel.urgency_level} URGENCY] Survivor ${activeTriage.survivorId} reports: "${intel.transcription}". Medical: ${needs} | Supplies Required: ${supplies}.`;
+              
+              // 3. Dynamically set the log color based on Urgency
+              const logType = intel.urgency_level === 'CRITICAL' ? 'error' : 
+                              intel.urgency_level === 'HIGH' ? 'warning' : 'info';
+
+              // 4. Push it to the mission logs
               addLog(
                 'SYSTEM', 
-                `Intel logged for survivor ${activeTriage.survivorId}. Urgency: ${intel.urgency_level}`, 
-                'success', 
-                { type: 'info', details }
+                logMessage, 
+                logType, 
+                { type: 'info', details: JSON.stringify(intel, null, 2) }
               );
             }}
             onResolve={() => setActiveTriage(null)} 
