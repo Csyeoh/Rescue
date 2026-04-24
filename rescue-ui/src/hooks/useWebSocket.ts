@@ -13,8 +13,9 @@ interface WebSocketHookProps {
   setSurvivorsFound: (val: number) => void;
   setSurvivorsDetected: (val: number) => void;
   setRevealedCells: (val: number | ((prev: number) => number)) => void;
+  setTickCount: (val: number) => void;
   setCoverage: (val: {x: number, y: number}[] | ((prev: {x: number, y: number}[]) => {x: number, y: number}[])) => void;
-  addLog: (agent: string, message: string, type?: LogEntry['type'], details?: LogEntry['details']) => void;
+  addLog: (agent: string, message: string, type?: LogEntry['type'], details?: LogEntry['details'], tick?: number) => void;
   discoveredRef: React.MutableRefObject<Set<string>>;
   seenLogsRef: React.MutableRefObject<Set<string>>;
 }
@@ -114,6 +115,7 @@ export const useWebSocket = (props: WebSocketHookProps) => {
           setSurvivorsFound,
           setSurvivorsDetected,
           setRevealedCells,
+          setTickCount,
           setCoverage,
           addLog,
           discoveredRef,
@@ -171,39 +173,27 @@ export const useWebSocket = (props: WebSocketHookProps) => {
           if (msg.type === 'dispatcher_update') {
             const payload = msg.payload ?? {};
             const drone_states = Array.isArray(payload.drones) ? payload.drones : [];
-            const sectorData  = Array.isArray(payload.sectors) ? payload.sectors : [];
 
             // Update drone statuses ONLY (not positions/battery — those come from tick_update)
             if (drone_states.length > 0) {
-              setDrones((prev) =>
-                prev.map((d) => {
+              setDrones((prev) => {
+                const updated = prev.map((d) => {
                   const update = drone_states.find((ds: any) => String(ds.id) === d.id);
                   if (update) {
                     const rawStatus = String(update.status ?? '').toUpperCase();
                     const status: typeof d.status =
                       rawStatus === 'RETURNING'  ? 'returning'
-                      : rawStatus === 'CHARGING' ? 'charging'
                       : rawStatus === 'IDLE'     ? 'idle'
                       : 'searching';
                     return { ...d, status };
                   }
                   return d;
-                })
-              );
+                });
+                return updated.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+              });
             }
 
-            // Update sectors (overwrites the whole array — sectors are transient)
-            setEnvironmentState((prev) => ({
-              ...prev,
-              sectors: sectorData.map((s: any) => ({
-                drone_id: String(s.drone_id),
-                cx: Number(s.cx),
-                cy: Number(s.cy),
-                radius: Number(s.radius),
-              })),
-            }));
-
-            addLog('SYSTEM', `Dispatcher update: ${sectorData.length} sector(s) assigned to the drones.`, 'info');
+            addLog('SYSTEM', `Dispatcher push received.`, 'info');
             return;
           }
 
@@ -239,6 +229,9 @@ export const useWebSocket = (props: WebSocketHookProps) => {
 
           if (msg.type === 'tick_update') {
             const payload = msg.payload ?? {};
+            const tick = Number(payload.tick ?? 0);
+            if (tick > 0) setTickCount(tick);
+            
             const drone_states  = Array.isArray(payload.drones)        ? payload.drones        : [];
             const obstacle_upds = Array.isArray(payload.obstacles)     ? payload.obstacles     : [];
             const building_upds = Array.isArray(payload.buildings)     ? payload.buildings     : [];
@@ -253,11 +246,17 @@ export const useWebSocket = (props: WebSocketHookProps) => {
               const prevById = new Map<string, DroneStatus>(
                 prev.map((d) => [d.id, d] as [string, DroneStatus])
               );
-              return drone_states.map((ds: any) => {
+              
+              const sortedStates = [...drone_states].sort((a: any, b: any) => 
+                String(a.id).localeCompare(String(b.id), undefined, { numeric: true })
+              );
+
+              return sortedStates.map((ds: any) => {
                 const id = String(ds.id);
                 const prevD = prevById.get(id);
 
                 const newX = Number(ds.x);
+
                 const newY = Number(ds.y);
                 const prevX = prevD?.x ?? newX;
                 const prevY = prevD?.y ?? newY;
@@ -280,7 +279,6 @@ export const useWebSocket = (props: WebSocketHookProps) => {
 
                 const status: DroneStatus['status'] =
                   String(ds.status ?? '').toUpperCase() === 'RETURNING' ? 'returning'
-                  : String(ds.status ?? '').toUpperCase() === 'CHARGING' ? 'charging'
                   : String(ds.status ?? '').toUpperCase() === 'IDLE'     ? 'idle'
                   : 'searching';
 
@@ -333,15 +331,6 @@ export const useWebSocket = (props: WebSocketHookProps) => {
               }
               next.survivors = newSurvivors;
 
-              next.sectors = payload.sectors
-                ? payload.sectors.map((s: any) => ({
-                    drone_id: String(s.drone_id),
-                    cx: Number(s.cx),
-                    cy: Number(s.cy),
-                    radius: Number(s.radius),
-                  }))
-                : [];
-
               const rescued = next.survivors.filter(c => c.isRescued).length;
               setSurvivorsFound(rescued);
               setSurvivorsDetected(rescued);
@@ -352,11 +341,12 @@ export const useWebSocket = (props: WebSocketHookProps) => {
             for (const l of agent_logs) {
               const agent = l?.drone_id ? String(l.drone_id) : 'AGENT';
               const message = l?.message ? String(l.message) : JSON.stringify(l);
+              const tick = l?.tick !== undefined ? Number(l.tick) : undefined;
               const time = l?.timestamp ? String(l.timestamp) : '';
-              const logKey = `${agent}|${time}|${message}`;
+              const logKey = `${agent}|${tick}|${time}|${message}`;
               if (!seenLogsRef.current.has(logKey)) {
                 seenLogsRef.current.add(logKey);
-                addLog(agent, message, 'info');
+                addLog(agent, message, 'info', undefined, tick);
               }
             }
             return;
@@ -394,6 +384,12 @@ export const useWebSocket = (props: WebSocketHookProps) => {
 
           if (msg.type === 'mission_complete') {
             addLog('SYSTEM', msg.payload?.message ?? 'Mission complete.', 'success');
+            setIsSimulationRunning(false);
+            return;
+          }
+          
+          if (msg.type === 'mission_failed') {
+            addLog('SYSTEM', msg.payload?.message ?? 'Mission failed.', 'error');
             setIsSimulationRunning(false);
             return;
           }

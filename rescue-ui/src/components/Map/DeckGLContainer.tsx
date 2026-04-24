@@ -21,7 +21,6 @@ import {
   createThermalLayer,
   createBaseLayer,
   createGroundLayer,
-  createSectorLayer,
   createCoverageLayer,
 } from '../../scene/layers';
 
@@ -37,8 +36,7 @@ interface DeckGLContainerProps {
   showCoords: boolean;
   isNightMode: boolean;
   showXRay: boolean;
-  showSectors: boolean;
-}
+  }
 
 // ---------------------------------------------------------------------------
 // Drone GLB model path.
@@ -117,8 +115,7 @@ export default function DeckGLContainer({
   mode,
   showCoords,
   isNightMode,
-  showXRay,
-  showSectors
+  showXRay
 }: DeckGLContainerProps) {
   const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null);
   const [time, setTime] = useState(0);
@@ -167,12 +164,11 @@ export default function DeckGLContainer({
       }),
 
       // 3. Base station beacon
-      createBaseLayer({ color: theme.base, line: theme.baseLine }),
+      createBaseLayer(environmentState.bases, { color: theme.base, line: theme.baseLine }),
 
       // 4. Flight trails and Sectors
       createTrailLayer(drones),
-      createSectorLayer(environmentState.sectors, time, showSectors),
-
+      
       // 5. Drone 3D models
       createDroneLayer(drones, DRONE_MODEL_URL, theme.drone),
 
@@ -205,7 +201,7 @@ export default function DeckGLContainer({
         outlineColor: [0, 0, 0, 128],
       }),
     ];
-  }, [buildingData, obstacleData, thermalData, survivorData, drones, environmentState.sectors, hoveredBuildingId, time, showCoords, showSectors, isNightMode]);
+  }, [buildingData, obstacleData, thermalData, survivorData, drones, hoveredBuildingId, time, showCoords,  isNightMode]);
 
   // ── Lighting Rig ──
   const effect = useMemo(() => createLightingEffect(isNightMode), [isNightMode]);
@@ -257,10 +253,12 @@ export default function DeckGLContainer({
               displayY = object.center[1].toFixed(2);
               break;
             case 'base-station':
-              const baseDrones = drones.filter(d => Math.hypot(d.x - 9.5, d.y - 9.5) < 1.0).length;
+              const bx = object.x || 9.5;
+              const by = object.y || 9.5;
+              const baseDrones = drones.filter(d => Math.hypot(d.x - bx, d.y - by) < 1.0).length;
               title = 'Base Station';
-              displayX = '9.50';
-              displayY = '9.50';
+              displayX = bx.toFixed(2);
+              displayY = by.toFixed(2);
               content = `
                 <div class="flex flex-col gap-1 mt-1">
                   <div class="flex justify-between gap-4"><span>Drones docked:</span><span class="font-bold text-azure-mid">${baseDrones}</span></div>

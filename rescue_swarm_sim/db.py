@@ -12,7 +12,6 @@ def init_db():
     conn = get_db_conn()
     cursor = conn.cursor()
 
-    # Drones: float x/y, assigned_sector replaces assigned_cells
     cursor.execute("""
         CREATE TABLE drones (
             id TEXT PRIMARY KEY,
@@ -20,8 +19,10 @@ def init_db():
             battery INTEGER,
             status TEXT,
             is_destroyed INTEGER,
-            thermal_memory TEXT,
-            assigned_sector TEXT
+            task_queue TEXT,
+            messages_for_commander TEXT,
+            error_count INTEGER DEFAULT 0,
+            thermal_memory TEXT
         )
     """)
 
@@ -49,7 +50,8 @@ def init_db():
             id TEXT PRIMARY KEY,
             cx REAL, cy REAL,
             revealed INTEGER DEFAULT 0,
-            tile_count INTEGER
+            tile_count INTEGER,
+            assigned_to TEXT DEFAULT NULL
         )
     """)
 
@@ -97,10 +99,10 @@ def get_db_conn():
 def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_data, survivor_data):
     """
     Batch upsert for the entire simulation state.
-    drone_data:    [(id, x, y, battery, status, is_destroyed, thermal_memory, assigned_sector), ...]
+    drone_data:    [(id, x, y, battery, status, is_destroyed, task_queue, messages_for_commander, error_count, thermal_memory), ...]
     obstacle_data: [(id, x, y, discovered), ...]
     building_data: [(id, x, y, revealed), ...]
-    building_cluster_data: [(id, cx, cy, revealed, tile_count), ...]
+    building_cluster_data: [(id, cx, cy, revealed, tile_count, assigned_to), ...]
     survivor_data: [(id, x, y, found), ...]
     """
     conn = get_db_conn()
@@ -109,7 +111,7 @@ def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_
     try:
         if drone_data:
             cursor.executemany(
-                "INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO drones VALUES (?,?,?,?,?,?,?,?,?,?)",
                 drone_data
             )
         if obstacle_data:
@@ -124,7 +126,7 @@ def sync_world_state(drone_data, obstacle_data, building_data, building_cluster_
             )
         if building_cluster_data:
             cursor.executemany(
-                "INSERT OR REPLACE INTO building_clusters VALUES (?,?,?,?,?)",
+                "INSERT OR REPLACE INTO building_clusters VALUES (?,?,?,?,?,?)",
                 building_cluster_data
             )
         if survivor_data:

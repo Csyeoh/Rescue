@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from google.adk import Agent
 from google.adk.agents.parallel_agent import ParallelAgent
 from google.adk.tools.mcp_tool import McpToolset, StdioConnectionParams
-from google.adk.models import LiteLlm
+from google.adk.models import LiteLlm, Gemini
 from google.adk.planners import BuiltInPlanner
 from google.genai import types
 from mcp.client.stdio import StdioServerParameters
@@ -23,7 +23,6 @@ class DroneIntent(BaseModel):
     drone_id: str  = Field(..., description="The ID of the drone")
     dx: float      = Field(0.0, description="Movement delta X (-1.0 to 1.0). Combined magnitude with dy must be ≤ 1.0.")
     dy: float      = Field(0.0, description="Movement delta Y (-1.0 to 1.0). Combined magnitude with dx must be ≤ 1.0.")
-    status: str    = Field(..., description="The new status of the drone (SEARCHING, IDLE, RETURNING, CHARGING)")
 
 class RescueCrew:
     def __init__(self):
@@ -101,7 +100,7 @@ class RescueCrew:
                 planner=BuiltInPlanner(
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
-                        thinking_budget=300,
+                        thinking_budget=512,
                     )
                 ),
                 generate_content_config=types.GenerateContentConfig(

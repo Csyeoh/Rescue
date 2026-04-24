@@ -11,6 +11,7 @@ interface HeaderProps {
   isAborting: boolean;
   isMapGenerated: boolean;
   onToggleSimulation: () => void;
+  tickCount: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,7 +21,8 @@ export const Header: React.FC<HeaderProps> = ({
   isSimulationRunning,
   isAborting,
   isMapGenerated,
-  onToggleSimulation
+  onToggleSimulation,
+  tickCount
 }) => {
   const discoveryPercent = Math.min(100, Math.floor((revealedCells / (GRID_SIZE * GRID_SIZE)) * 100));
   const detectedPercent = (survivorsDetected / totalSurvivors) * 100;
@@ -76,6 +78,14 @@ export const Header: React.FC<HeaderProps> = ({
               className="h-full bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.3)]"
             />
           </div>
+        </div>
+
+        {/* Mission Tick Count */}
+        <div className="flex flex-col items-center justify-center bg-neutral-dark/10 px-4 py-1.5 rounded-xl border border-azure-pale/30 min-w-[100px]">
+          <span className="text-[10px] font-bold text-azure-mid uppercase tracking-widest leading-none mb-1">Mission Tick</span>
+          <span className="text-xl font-mono font-bold text-neutral-dark leading-none">
+            {tickCount < 10 ? `00${tickCount}` : tickCount < 100 ? `0${tickCount}` : tickCount}
+          </span>
         </div>
 
         <div className="h-12 w-px bg-azure-pale/50 mx-2" />

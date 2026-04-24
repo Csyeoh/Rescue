@@ -18,6 +18,7 @@ export const useMissionControl = () => {
   const [survivorsFound, setSurvivorsFound] = useState(0);
   const [survivorsDetected, setSurvivorsDetected] = useState(0);
   const [revealedCells, setRevealedCells] = useState(0);
+  const [tickCount, setTickCount] = useState(0);
   const [coverage, setCoverage] = useState<{x: number, y: number}[]>([]);
   const [drones, setDrones] = useState<DroneStatus[]>([]);
   const [environmentState, setEnvironmentState] = useState<EnvironmentState>({
@@ -25,7 +26,7 @@ export const useMissionControl = () => {
     obstacles: [],
     survivors: [],
     thermalScans: [],
-    sectors: []
+    bases: [],
   });
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [mapData, setMapData] = useState<any | null>(null);
@@ -33,10 +34,11 @@ export const useMissionControl = () => {
   const discoveredRef = useRef<Set<string>>(new Set());
   const seenLogsRef = useRef<Set<string>>(new Set());
 
-  const addLog = useCallback((agent: string, message: string, type: LogEntry['type'] = 'info', details?: LogEntry['details']) => {
+  const addLog = useCallback((agent: string, message: string, type: LogEntry['type'] = 'info', details?: LogEntry['details'], tick?: number) => {
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date().toLocaleTimeString(),
+      tick: tick ?? tickCount,
       agent,
       message,
       type,
@@ -52,12 +54,13 @@ export const useMissionControl = () => {
       console.error("Failed to reset backend:", e);
     }
 
-    setEnvironmentState({ buildings: [], obstacles: [], survivors: [], thermalScans: [], sectors: [] });
+    setEnvironmentState({ buildings: [], obstacles: [], survivors: [], thermalScans: [], bases: [] });
     setSurvivorsFound(0);
     setSurvivorsDetected(0);
     discoveredRef.current = new Set();
     seenLogsRef.current = new Set();
     setRevealedCells(0);
+    setTickCount(0);
     setCoverage([]);
     setIsSimulationRunning(false);
     setMapData(null);
@@ -94,17 +97,19 @@ export const useMissionControl = () => {
       
       setEnvironmentState(envState);
 
-      // Spaced-out drone initialization at base (9.5, 9.5)
+      // Spaced-out drone initialization at bases
       const droneCount = data.num_drones || 3;
+      const numBases = envState.bases.length || 1;
       const initialDrones: DroneStatus[] = Array.from({ length: droneCount }).map((_, i) => {
         const angle = (i * 2 * Math.PI) / droneCount;
         const radius = 0.3;
+        const base = envState.bases.length > 0 ? envState.bases[i % numBases] : { x: BASE_X, y: BASE_Y };
         return {
           id: `drone_${i + 1}`,
           battery: 100,
           status: 'idle',
-          x: BASE_X + 0.5 + Math.cos(angle) * radius,
-          y: BASE_Y + 0.5 + Math.sin(angle) * radius,
+          x: base.x + 0.5 + Math.cos(angle) * radius,
+          y: base.y + 0.5 + Math.sin(angle) * radius,
           stepsTaken: 0
         };
       });
@@ -194,6 +199,8 @@ export const useMissionControl = () => {
     setSurvivorsDetected,
     revealedCells,
     setRevealedCells,
+    tickCount,
+    setTickCount,
     coverage,
     setCoverage,
     drones,

@@ -8,5 +8,4 @@ export { createTrailLayer }         from './trailLayer';
 export { createThermalLayer }       from './thermalLayer';
 export { createBaseLayer }          from './baseLayer';
 export { createGroundLayer }        from './groundLayer';
-export { createSectorLayer }        from './sectorLayer';
 export { createCoverageLayer }      from './coverageLayer';

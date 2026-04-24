@@ -14,6 +14,7 @@ def parse_ascii_map(file_path: str = "map.txt") -> dict:
     buildings = []
     survivors = []
     obstacles = []
+    bases = []
     
     for y, line in enumerate(lines):
         for x, char in enumerate(line):
@@ -28,5 +29,7 @@ def parse_ascii_map(file_path: str = "map.txt") -> dict:
                     survivors.append({"x": x, "y": y})
             elif char == "#":
                 obstacles.append({"x": x, "y": y})
+            elif char == "@":
+                bases.append({"x": x, "y": y})
             
-    return {"buildings": buildings, "survivors": survivors, "obstacles": obstacles}
+    return {"buildings": buildings, "survivors": survivors, "obstacles": obstacles, "bases": bases}

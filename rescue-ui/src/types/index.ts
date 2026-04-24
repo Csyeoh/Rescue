@@ -6,12 +6,7 @@ export interface ObstacleNode extends EntityCoord { discovered: boolean; }
 
 export interface SurvivorNode extends EntityCoord { isRescued: boolean; }
 
-export interface SectorData {
-  drone_id: string;
-  cx: number;
-  cy: number;
-  radius: number;
-}
+
 
 export interface ThermalScanNode {
   cx: number;
@@ -27,7 +22,7 @@ export interface EnvironmentState {
   obstacles: ObstacleNode[];
   survivors: SurvivorNode[];
   thermalScans: ThermalScanNode[];
-  sectors: SectorData[];
+  bases: EntityCoord[];
 }
 
 export interface DroneStatus {
@@ -50,6 +45,7 @@ export interface SurvivorPoint {
 export interface LogEntry {
   id: string;
   timestamp: string;
+  tick?: number;
   agent: string;
   message: string;
   type: 'info' | 'warning' | 'success' | 'error' | 'reasoning' | 'tool_call' | 'tool_response';

@@ -6,7 +6,7 @@ export const initializeEnvironmentState = (map_data: any): EnvironmentState => {
     obstacles: [],
     survivors: [],
     thermalScans: [],
-    sectors: []
+    bases: [],
   };
 
   const obstacles = map_data?.obstacles ?? [];
@@ -33,6 +33,14 @@ export const initializeEnvironmentState = (map_data: any): EnvironmentState => {
       x: Number(s.x),
       y: Number(s.y),
       isRescued: Boolean(s.discovered),
+    });
+  }
+
+  const bases = map_data?.bases ?? [{ x: 9, y: 9 }];
+  for (const bs of bases) {
+    state.bases.push({
+      x: Number(bs.x),
+      y: Number(bs.y),
     });
   }
 

@@ -12,7 +12,6 @@ import DeckGLContainer from '../components/Map/DeckGLContainer';
 export default function DeckApp() {
 
   const [showCoords, setShowCoords] = useState(false);
-  const [showSectors, setShowSectors] = useState(true);
   const [isNightMode, setIsNightMode] = useState(false);
   const [showXRay, setShowXRay] = useState(false);
   
@@ -31,6 +30,8 @@ export default function DeckApp() {
     setSurvivorsFound,
     revealedCells,
     setRevealedCells,
+    tickCount,
+    setTickCount,
     coverage,
     setCoverage,
     drones,
@@ -61,6 +62,7 @@ export default function DeckApp() {
     setSurvivorsFound,
     setSurvivorsDetected,
     setRevealedCells,
+    setTickCount,
     setCoverage,
     addLog,
     discoveredRef,
@@ -82,7 +84,6 @@ export default function DeckApp() {
           coverage={coverage}
           mode="god" 
           showCoords={showCoords}
-          showSectors={showSectors}
           isNightMode={isNightMode}
           showXRay={showXRay}
         />
@@ -105,6 +106,7 @@ export default function DeckApp() {
             isAborting={isAborting}
             isMapGenerated={isMapGenerated}
             onToggleSimulation={toggleSimulation}
+            tickCount={tickCount}
           />
 
           {/* ── Tactical Control Panel (Top Right - Lifted to Interactive Layer) ── */}
@@ -137,19 +139,6 @@ export default function DeckApp() {
               <span className="text-[11px] font-bold text-mint-bg uppercase tracking-wider group-hover:text-azure-mid transition-colors">Show Coords</span>
             </label>
 
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <div className="relative">
-                <input 
-                  type="checkbox" 
-                  className="sr-only" 
-                  checked={showSectors}
-                  onChange={(e) => setShowSectors(e.target.checked)}
-                />
-                <div className={`block w-10 h-6 rounded-full transition-colors ${showSectors ? 'bg-azure-mid' : 'bg-neutral-dark border border-azure-dark/50'}`}></div>
-                <div className={`absolute left-1 top-1 bg-mint-bg w-4 h-4 rounded-full transition-transform ${showSectors ? 'translate-x-4' : ''}`}></div>
-              </div>
-              <span className="text-[11px] font-bold text-mint-bg uppercase tracking-wider group-hover:text-azure-mid transition-colors">Show Sectors</span>
-            </label>
 
             <label className="flex items-center gap-3 cursor-pointer group">
               <div className="relative">
@@ -205,7 +194,6 @@ export default function DeckApp() {
         {/* ── Swarm Status Panel (Right Edge) ── */}
         <SwarmStatusPanel
           drones={drones}
-          sectors={environmentState.sectors}
           isConnected={isSimulationRunning}
         />
 

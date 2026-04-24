@@ -32,7 +32,6 @@ def get_current_map_state() -> dict:
 
     # ── Drones & Sectors ────────────────────────────────────────────────────────
     drones = []
-    sectors = []
     for agent in world.schedule.agents:
         if isinstance(agent, DroneAgent):
             drones.append({
@@ -42,13 +41,6 @@ def get_current_map_state() -> dict:
                 "battery": agent.battery,
                 "status": agent.status,
             })
-            if getattr(agent, "assigned_sector", None):
-                sectors.append({
-                    "drone_id": agent.unique_id,
-                    "cx": agent.assigned_sector.get("cx", 0),
-                    "cy": agent.assigned_sector.get("cy", 0),
-                    "radius": agent.assigned_sector.get("radius", 0)
-                })
 
     # ── Survivors ────────────────────────────────────────────────────────────
     survivors = []
@@ -64,11 +56,11 @@ def get_current_map_state() -> dict:
     # Active thermal scans are now isolated to their own API endpoint.
 
     return {
+        "tick": world.tick_count,
         "grid": {"width": world.space.x_max, "height": world.space.y_max},
         "obstacles": obstacles,
         "buildings": buildings,
         "drones": drones,
-        "sectors": sectors,
         "survivors": survivors,
         "logs": world.mission_logs,
     }
@@ -90,7 +82,6 @@ def get_dispatcher_state() -> dict:
     from simulation import DroneAgent
 
     drones = []
-    sectors = []
     for agent in world.schedule.agents:
         if isinstance(agent, DroneAgent):
             drones.append({
@@ -100,17 +91,9 @@ def get_dispatcher_state() -> dict:
                 "battery": agent.battery,
                 "status": agent.status,
             })
-            if agent.assigned_sector:
-                sectors.append({
-                    "drone_id": agent.unique_id,
-                    "cx": agent.assigned_sector.get("cx", 0),
-                    "cy": agent.assigned_sector.get("cy", 0),
-                    "radius": agent.assigned_sector.get("radius", 0),
-                })
 
     return {
         "drones": drones,
-        "sectors": sectors,
     }
 
 def get_coverage_state() -> dict:

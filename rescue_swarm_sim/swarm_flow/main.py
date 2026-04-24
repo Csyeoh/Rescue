@@ -234,7 +234,10 @@ class SwarmCombinedFlow:
         # 1. Dispatcher Phase: Run dispatcher to coordinate the swarm
         self.log_to_file("PHASE: Dispatcher - Coordinating swarm.")
         dispatcher = self.rescue_crew.get_dispatcher_agent()
-        await self.run_agent(dispatcher, "Analyze mission status and coordinate the swarm.", session_id="mission_dispatcher")
+        
+        # Inject dynamic situation report
+        user_msg = "Analyze mission status and coordinate the swarm."
+        await self.run_agent(dispatcher, user_msg, session_id="mission_dispatcher")
         
         # Sync dispatcher-written fields (status, assigned_sector) from DB → Mesa
         simulation.sim_world.dispatcher_step()
@@ -291,6 +294,27 @@ class SwarmCombinedFlow:
         # Dedicated coverage update (Fog of War)
         coverage = get_coverage_state()
         websocket_manager.send_to_ui("coverage_update", coverage)
+
+        if simulation.sim_world and simulation.sim_world.mission_complete:
+            msg = None
+            logs = getattr(simulation.sim_world, "mission_logs", None)
+            if isinstance(logs, list):
+                sys_evt = next((l for l in reversed(logs) if isinstance(l, dict) and l.get("drone_id") == "SYSTEM"), None)
+                if isinstance(sys_evt, dict):
+                    msg = sys_evt.get("message")
+            websocket_manager.send_to_ui("mission_complete", {
+                "message": msg or "MISSION COMPLETE: all survivors rescued."
+            })
+        elif simulation.sim_world and getattr(simulation.sim_world, "mission_failed", False):
+            msg = None
+            logs = getattr(simulation.sim_world, "mission_logs", None)
+            if isinstance(logs, list):
+                sys_evt = next((l for l in reversed(logs) if isinstance(l, dict) and l.get("drone_id") == "SYSTEM"), None)
+                if isinstance(sys_evt, dict):
+                    msg = sys_evt.get("message")
+            websocket_manager.send_to_ui("mission_failed", {
+                "message": msg or "MISSION FAILED: one or more drones lost."
+            })
         
         self.log_to_file(f"--- TICK {tick_count} COMPLETED (Duration: {time.time() - self.tick_start_time:.2f}s) ---")
 

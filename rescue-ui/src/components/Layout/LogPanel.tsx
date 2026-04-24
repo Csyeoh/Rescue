@@ -115,6 +115,21 @@ function formatAgent(agent: string): string {
   return agent;
 }
 
+// ── Tick Separator ──────────────────────────────────────────────────────────
+const TickSeparator: React.FC<{ tick: number }> = ({ tick }) => (
+  <motion.div
+    initial={{ opacity: 0, scaleY: 0 }}
+    animate={{ opacity: 1, scaleY: 1 }}
+    className="flex items-center gap-3 my-2 px-1"
+  >
+    <div className="h-px flex-1 bg-gradient-to-r from-transparent via-azure-mid/30 to-transparent" />
+    <span className="text-[10px] font-mono font-bold text-azure-mid uppercase tracking-[0.2em] whitespace-nowrap bg-neutral-dark/40 px-2 py-0.5 rounded border border-azure-mid/20">
+      Mission Tick {tick < 10 ? `00${tick}` : tick < 100 ? `0${tick}` : tick}
+    </span>
+    <div className="h-px flex-1 bg-gradient-to-r from-azure-mid/30 via-azure-mid/30 to-transparent" />
+  </motion.div>
+);
+
 // ── Log Row ─────────────────────────────────────────────────────────────────
 
 const LogRow: React.FC<{ log: LogEntry; index: number }> = ({ log, index }) => {
@@ -163,9 +178,11 @@ const LogRow: React.FC<{ log: LogEntry; index: number }> = ({ log, index }) => {
               <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold ${cfg.badge}`}>
                 {cfg.label}
               </span>
-              <span className="text-[11px] text-white/25 font-mono ml-auto shrink-0">
-                {log.timestamp}
-              </span>
+              <div className="flex items-center gap-2 ml-auto shrink-0">
+                <span className="text-[11px] text-white/25 font-mono">
+                  {log.timestamp}
+                </span>
+              </div>
             </div>
 
             {/* Message — type-specific rendering */}
@@ -478,7 +495,14 @@ export const LogPanel: React.FC<LogPanelProps> = ({
                       )}
                     </div>
                   ) : (
-                    filteredLogs.map((log, i) => <LogRow key={log.id} log={log} index={i} />)
+                    filteredLogs.reduce((acc: React.ReactNode[], log, i) => {
+                      const prevLog = filteredLogs[i - 1];
+                      if (log.tick !== undefined && (!prevLog || prevLog.tick !== log.tick)) {
+                        acc.push(<TickSeparator key={`tick-${log.tick}-${i}`} tick={log.tick} />);
+                      }
+                      acc.push(<LogRow key={log.id} log={log} index={i} />);
+                      return acc;
+                    }, [])
                   )}
                 </div>
               </div>

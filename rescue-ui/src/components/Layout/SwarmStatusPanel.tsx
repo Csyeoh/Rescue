@@ -12,11 +12,10 @@ import {
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import { DroneStatus, SectorData } from '../../types';
+import { DroneStatus } from '../../types';
 
 interface SwarmStatusPanelProps {
   drones: DroneStatus[];
-  sectors: SectorData[];
   isConnected?: boolean;
 }
 
@@ -68,8 +67,7 @@ function formatId(id: string): string {
 
 const DroneStatusCard: React.FC<{
   drone: DroneStatus;
-  sector?: SectorData;
-}> = ({ drone, sector }) => {
+}> = ({ drone }) => {
   const cfg = STATUS_CONFIG[drone.status] ?? STATUS_CONFIG.idle;
   const accent = droneAccent(drone.id);
   const batteryColor =
@@ -123,7 +121,7 @@ const DroneStatusCard: React.FC<{
           </span>
         </div>
 
-        {/* Row 3: Position + Sector */}
+        {/* Row 3: Position */}
         <div className="flex items-center justify-between text-xs text-white/40">
           <div className="flex items-center gap-1.5 font-mono">
             <Navigation size={11} className="text-white/20" />
@@ -131,14 +129,6 @@ const DroneStatusCard: React.FC<{
               {drone.x.toFixed(1)}, {drone.y.toFixed(1)}
             </span>
           </div>
-          {sector && (
-            <div className="flex items-center gap-1.5 font-mono" style={{ color: accent }}>
-              <Target size={11} />
-              <span>
-                ({sector.cx}, {sector.cy}) r{sector.radius}
-              </span>
-            </div>
-          )}
         </div>
       </div>
     </motion.div>
@@ -149,15 +139,12 @@ const DroneStatusCard: React.FC<{
 
 export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
   drones,
-  sectors,
   isConnected = false,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
 
   const activeDrones = drones.filter((d) => d.status === 'searching' || d.status === 'returning');
-  const idleDrones = drones.filter((d) => d.status === 'idle' || d.status === 'charging');
-
-  const sectorMap = new Map(sectors.map((s) => [s.drone_id, s]));
+  const idleDrones = drones.filter((d) => d.status === 'idle');
 
   return (
     <div className="absolute right-4 bottom-6 top-24 z-20 flex items-end justify-end pointer-events-none">
@@ -285,29 +272,17 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
                       <DroneStatusCard
                         key={drone.id}
                         drone={drone}
-                        sector={sectorMap.get(drone.id)}
                       />
                     ))
                   )}
                 </div>
 
-                {/* ── Sector summary strip ── */}
-                {sectors.length > 0 && (
-                  <div
-                    className="px-4 py-2.5 border-t shrink-0 flex items-center justify-between"
-                    style={{ borderColor: 'rgba(65,110,111,0.25)' }}
-                  >
-                    <div className="flex items-center gap-1.5 text-[13px] text-azure-mid">
-                      <Target size={12} />
-                      <span className="font-medium">
-                        {sectors.length} active sector{sectors.length !== 1 ? 's' : ''}
-                      </span>
-                    </div>
+                {/* Empty strip space */}
+                <div className="px-4 py-2.5 border-t shrink-0 flex items-center justify-end" style={{ borderColor: 'rgba(65,110,111,0.25)' }}>
                     <span className="text-xs text-white/25 font-mono">
                       {idleDrones.length} idle
                     </span>
-                  </div>
-                )}
+                </div>
               </div>
             </motion.div>
           )}

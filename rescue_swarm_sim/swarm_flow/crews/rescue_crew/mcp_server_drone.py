@@ -62,15 +62,15 @@ def get_drone_context(drone_id: str) -> dict:
     Returns live telemetry and immediate visual surroundings for a drone:
     - pos: current continuous-space position {x, y}
     - battery: remaining battery %
-    - status: SEARCHING | RETURNING | CHARGING | IDLE | CRASHED
-    - assigned_sector: {cx, cy, radius} search zone
+    - status: SEARCHING | RETURNING | IDLE | CRASHED
+    - task_queue: contains {"task": string, "status": pending|completed, "feedback": []}
     - surroundings: list of entities within a 1.0 unit optical radius
     Base station is at (9.5, 9.5).
     """
     conn = db.get_db_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT x, y, battery, status, thermal_memory, assigned_sector FROM drones WHERE id=?",
+        "SELECT x, y, battery, status, task_queue, thermal_memory FROM drones WHERE id=?",
         (drone_id,)
     )
     row = cursor.fetchone()
@@ -79,10 +79,10 @@ def get_drone_context(drone_id: str) -> dict:
         conn.close()
         return {"error": "drone not found"}
 
-    x, y, batt, status, t_mem_raw, sector_raw = row
+    x, y, batt, status, task_queue_raw, t_mem_raw = row
     cx, cy = x, y
     
-    # --- Integration of Optical Scan (formerly view_surrounding) ---
+    # Optical Scan use to scan for surroundings entities
     detected = []
 
     # Obstacles
@@ -117,16 +117,24 @@ def get_drone_context(drone_id: str) -> dict:
     conn.commit()
     conn.close()
 
-    sector = json.loads(sector_raw) if sector_raw else None
+    task_queue = json.loads(task_queue_raw) if task_queue_raw else []
+    thermal_memory = json.loads(t_mem_raw) if t_mem_raw else []
+    
+    # Get only the very top incomplete task
+    current_task = None
+    for t in task_queue:
+        if t.get("status") == "pending":
+            current_task = t
+            break
+
     return {
         "id": drone_id,
         "pos": {"x": round(x, 2), "y": round(y, 2)},
-        "battery": batt,
         "status": status,
-        "assigned_sector": sector,
-        "thermal_memory": json.loads(t_mem_raw) if t_mem_raw else [],
+        "current_task": current_task,
+        "thermal_memory": thermal_memory,
         "surroundings": detected if detected else [{"type": "EMPTY", "distance": 0, "angle_deg": 0}],
-        "summary": f"{drone_id} at ({round(x,1)},{round(y,1)}), battery {batt}%, status {status}. Detected {len(detected)} nearby entities (within 1.0 units)."
+        "summary": f"{drone_id} at ({round(x,1)},{round(y,1)}), status {status}. Active Task: {'Yes' if current_task else 'No'}. Detected {len(detected)} nearby entities."
     }
 
 
@@ -215,18 +223,16 @@ def get_navigation_step(drone_id: str, target_x: float, target_y: float) -> dict
 
 
 @mcp.tool()
-def thermal_scan(drone_id: str, angle_deg: float) -> dict:
+def thermal_scan(drone_id: str, cluster_id: str) -> dict:
     """
-    Emits a fan-shaped thermal sensor beam from the drone in a chosen degree bearing.
+    Emits a fan-shaped thermal sensor beam from the drone accurately pointing towards the given building cluster.
 
     HOW IT WORKS:
-    - angle_deg: the centre bearing of the fan (0=North, 90=East, 180=South, 270=West).
+    - Automatically calculates the optimal angle bearing towards the cluster_id.
     - Fixed Scale: radius = 6.0 units (300m), arc = 60°.
     - Signal Logic: 95% at 1.0u distance, 20% at 6.0u distance.
     - Obstacles block the heat (occlusion).
     - Detection Results: Includes a list of hits with signal strength, distance, and relative bearing.
-    
-    OUTPUT: {"angle_deg": float, "highest_signal": "XX%", "detections": [...]}
     """
     conn = db.get_db_conn()
     cursor = conn.cursor()
@@ -237,6 +243,15 @@ def thermal_scan(drone_id: str, angle_deg: float) -> dict:
         conn.close()
         return {"error": "drone not found"}
     cx, cy, t_mem_raw = row
+    thermal_memory = json.loads(t_mem_raw) if t_mem_raw else []
+    
+    cursor.execute("SELECT cx, cy FROM building_clusters WHERE id=?", (cluster_id,))
+    target = cursor.fetchone()
+    if not target:
+        conn.close()
+        return {"error": "Cluster not found"}
+        
+    angle_deg = _bearing(cx, cy, target[0], target[1])
 
     # Load obstacles and survivors
     cursor.execute("SELECT x, y FROM obstacles")
@@ -249,6 +264,24 @@ def thermal_scan(drone_id: str, angle_deg: float) -> dict:
     ARC_DEG = 60.0
     detections = []
     highest_true_score = 0.0
+
+    # 1. Coverage Map Sync
+    # Mathematically find all 0.5x0.5 tiles within this arc to mark as revealed
+    revealed_cells = []
+    # Grid limits are 0-40 because map is 20x20 and cells are 0.5
+    for ix in range(40):
+        for iy in range(40):
+            cell_x = ix * 0.5 + 0.25
+            cell_y = iy * 0.5 + 0.25
+            cdist = math.hypot(cell_x - cx, cell_y - cy)
+            if cdist <= SCAN_RADIUS:
+                cbearing = _bearing(cx, cy, cell_x, cell_y)
+                if _angle_in_arc(cbearing, angle_deg, ARC_DEG):
+                    if not _ray_occluded(cx, cy, cell_x, cell_y, obstacles):
+                        revealed_cells.append((ix, iy))
+    
+    if revealed_cells:
+        db.sync_coverage(revealed_cells)
 
     for sx, sy in survivors:
         dist = math.hypot(cx - sx, cy - sy)
@@ -283,11 +316,26 @@ def thermal_scan(drone_id: str, angle_deg: float) -> dict:
     # Process detections (Format for result)
     results = []
     for d in detections:
+        rad = math.radians(d["bearing"])
+        est_x = round(cx + d["distance"] * math.sin(rad), 2)
+        est_y = round(cy + d["distance"] * math.cos(rad), 2)
+
         results.append({
             "bearing": d["bearing"],
             "distance": d["distance"],
             "signal_strength": f"{int(d['score'])}%"
         })
+
+        matched = False
+        for tm in thermal_memory:
+            if math.hypot(tm["x"] - est_x, tm["y"] - est_y) <= 0.6:
+                tm["signal"] = int(max(tm["signal"], d["score"]))
+                tm["x"] = round((tm["x"] + est_x) / 2.0, 2)
+                tm["y"] = round((tm["y"] + est_y) / 2.0, 2)
+                matched = True
+                break
+        if not matched:
+            thermal_memory.append({"x": est_x, "y": est_y, "signal": int(d["score"])})
 
     # PROBABILITY: 10% chance to generate a phantom "ghost" detection (0-30% strength)
     if random.random() < 0.1:
@@ -305,44 +353,31 @@ def thermal_scan(drone_id: str, angle_deg: float) -> dict:
         if p_strength > highest_true_score:
             highest_true_score = p_strength
 
+        p_rad = math.radians(p_bearing)
+        est_x = round(cx + p_dist * math.sin(p_rad), 2)
+        est_y = round(cy + p_dist * math.cos(p_rad), 2)
+
+        matched = False
+        for tm in thermal_memory:
+            if math.hypot(tm["x"] - est_x, tm["y"] - est_y) <= 0.6:
+                tm["signal"] = int(max(tm["signal"], p_strength))
+                matched = True
+                break
+        if not matched:
+            thermal_memory.append({"x": est_x, "y": est_y, "signal": p_strength})
+
+    cursor.execute("UPDATE drones SET thermal_memory=? WHERE id=?", (json.dumps(thermal_memory), drone_id))
+
     # Overall strongest signal for quick reference
     final_score = int(highest_true_score)
-
-    # Update thermal memory: update existing entry if at the same location (0.1 precision)
-    mem = json.loads(t_mem_raw) if t_mem_raw else []
-    target_x, target_y = round(cx, 1), round(cy, 1)
-    
-    found = False
-    for entry in mem:
-        if round(entry.get("x", 0), 1) == target_x and round(entry.get("y", 0), 1) == target_y:
-            entry.update({
-                "x": round(cx, 2),
-                "y": round(cy, 2),
-                "angle": angle_deg,
-                "strength": f"{final_score}%",
-                "timestamp": time.time(),
-                "detections_count": len(results)
-            })
-            found = True
-            break
-            
-    if not found:
-        mem.append({
-            "x": round(cx, 2), "y": round(cy, 2), 
-            "angle": angle_deg, "strength": f"{final_score}%",
-            "timestamp": time.time(),
-            "detections_count": len(results)
-        })
-    
-    cursor.execute("UPDATE drones SET thermal_memory=? WHERE id=?", (json.dumps(mem), drone_id))
 
     conn.commit()
     conn.close()
 
     det_count = len(results)
-    summary = f"Thermal scan at {angle_deg}° (±30°): detected {det_count} survivor(s). Peak signal {final_score}%."
+    summary = f"Thermal scan at {angle_deg}° (±30°): detected {det_count} heat signature    s. Peak signal {final_score}%."
     if det_count == 0:
-        summary = f"Thermal scan at {angle_deg}° (±30°): no survivors detected."
+        summary = f"Thermal scan at {angle_deg}° (±30°): no heat signatures detected."
 
     return {
         "angle_deg": angle_deg,
@@ -353,38 +388,124 @@ def thermal_scan(drone_id: str, angle_deg: float) -> dict:
 
 
 @mcp.tool()
-def check_task_viability(drone_id: str, target_x: float, target_y: float) -> dict:
+def get_nearest_base(drone_id: str) -> dict:
     """
-    Estimates whether the drone has enough battery to fly to (target_x, target_y)
-    and return safely to base at (9.5, 9.5).
-    Uses Euclidean distance. Battery cost = 2 per unit of movement.
-    Returns: {viable: bool, required_battery: float, current_battery: int}
+    Returns the nearest base station coordinates to the drone.
+    Use this when you are setting RETURNING status and need to know where to fly.
     """
     conn = db.get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT x, y, battery FROM drones WHERE id=?", (drone_id,))
+    cursor.execute("SELECT x, y FROM drones WHERE id=?", (drone_id,))
     row = cursor.fetchone()
     conn.close()
 
     if not row:
         return {"error": "drone not found"}
 
-    cx, cy, battery = row
-    base_x, base_y = 9.5, 9.5
+    cx, cy = row
+    
+    import map_generator
+    bases = map_generator.parse_ascii_map()['bases']
+    
+    if not bases: 
+        return {"x": 9.5, "y": 9.5}
 
-    d_to_target = math.hypot(target_x - cx, target_y - cy)
-    d_to_base   = math.hypot(base_x - target_x, base_y - target_y)
-
-    # 2 battery per unit moved, +10 safety buffer
-    required = (d_to_target + d_to_base) * 2.0 + 10.0
-
-    viable = battery >= required
+    nearest = min(bases, key=lambda b: math.hypot(b["x"] + 0.5 - cx, b["y"] + 0.5 - cy))
+    
     return {
-        "viable": viable,
-        "required_battery": round(required, 1),
-        "current_battery": battery,
-        "summary": f"{'Viable' if viable else 'Not viable'}: needs {round(required,1)}% battery, has {battery}%."
+        "x": nearest["x"] + 0.5,
+        "y": nearest["y"] + 0.5,
+        "summary": f"Nearest base is at ({nearest['x'] + 0.5}, {nearest['y'] + 0.5})."
     }
+
+@mcp.tool()
+def report_to_commander(drone_id: str, message: str) -> dict:
+    """
+    Send a report directly to the Central Commander.
+    Use this after EVERY thermal scan, if your path is blocked, or if your battery is critically low.
+    """
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT messages_for_commander FROM drones WHERE id=?", (drone_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return {"error": "drone not found"}
+        
+    msgs = json.loads(row[0]) if row[0] else []
+    import time
+    msgs.append({"time": time.time(), "message": message})
+    
+    cursor.execute("UPDATE drones SET messages_for_commander=? WHERE id=?", (json.dumps(msgs), drone_id))
+    conn.commit()
+    conn.close()
+    
+    return {"summary": "Report successfully queued for the Commander's review."}
+
+@mcp.tool()
+def declare_survivor(drone_id: str, x: float, y: float) -> dict:
+    """
+    Declare a confirmed survivor at the given coordinates (within a 0.5 unit tolerance).
+    If a survivor actually exists near here, they will be rescued.
+    If you are wrong, your error_count increases!
+    """
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    
+    # Clean up thermal memory around the area
+    cursor.execute("SELECT thermal_memory FROM drones WHERE id=?", (drone_id,))
+    row = cursor.fetchone()
+    if row and row[0]:
+        t_mem = json.loads(row[0])
+        new_mem = [tm for tm in t_mem if math.hypot(tm["x"] - x, tm["y"] - y) > 0.6]
+        cursor.execute("UPDATE drones SET thermal_memory=? WHERE id=?", (json.dumps(new_mem), drone_id))
+
+    cursor.execute("SELECT id, x, y FROM survivors WHERE found=0")
+    survivors = cursor.fetchall()
+    
+    found_id = None
+    for s_id, sx, sy in survivors:
+        if math.hypot(sx - x, sy - y) <= 0.5:
+            found_id = s_id
+            break
+            
+    if found_id:
+        cursor.execute("UPDATE survivors SET found=1 WHERE id=?", (found_id,))
+        # Find drone and insert fake log message so simulation knows about the rescue
+        import simulation
+        if simulation.sim_world:
+            simulation.sim_world.found_survivors += 1
+            simulation.sim_world.log_action(drone_id, f"Survivor officially declared and rescued near {round(x,1)}, {round(y,1)}!")
+        conn.commit()
+        conn.close()
+    else:
+        cursor.execute("UPDATE drones SET error_count = error_count + 1 WHERE id=?", (drone_id,))
+        conn.commit()
+        conn.close()
+        
+    return {"summary": "You have submitted a declaration. Please send a report back to the Commander."}
+
+@mcp.tool()
+def remove_thermal_noise(drone_id: str, x: float, y: float) -> dict:
+    """
+    Removes a specific thermal signature from your thermal memory if you determine it is noise.
+    Use this when you have investigated a heat signature at close range and the signal is weak (< 30%).
+    """
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT thermal_memory FROM drones WHERE id=?", (drone_id,))
+    row = cursor.fetchone()
+    if not row or not row[0]:
+        conn.close()
+        return {"summary": "No thermal memory to remove."}
+    
+    t_mem = json.loads(row[0])
+    new_mem = [tm for tm in t_mem if math.hypot(tm["x"] - x, tm["y"] - y) > 0.6]
+    
+    cursor.execute("UPDATE drones SET thermal_memory=? WHERE id=?", (json.dumps(new_mem), drone_id))
+    conn.commit()
+    conn.close()
+    return {"summary": f"Thermal noise near ({x}, {y}) has been wiped from memory."}
 
 
 if __name__ == "__main__":

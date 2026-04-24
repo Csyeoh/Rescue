@@ -70,6 +70,7 @@ class BuildingCluster:
         self.cy = cy
         self.tiles = tiles # list of (x,y) coordinates
         self.revealed = False
+        self.assigned_to = None
 
 
 # ---------------------------------------------------------------------------
@@ -89,19 +90,40 @@ class DroneAgent(Agent):
         super().__init__(unique_id, model)
         self.battery = battery
         self.status = "IDLE"
-        self.assigned_sector = None   # dict: {cx, cy, radius} or None
+        self.task_queue = []   # replaces assigned_sector
+        self.messages_for_commander = []
+        self.error_count = 0
         self.thermal_memory = []
         self.is_destroyed = False
+        self.destroy_reason = None
+        self.destroy_tick = None
 
     def step(self):
         if self.is_destroyed:
             return
-        if self.status == "CHARGING":
-            self.battery = min(100, self.battery + 2)
-        if self.battery <= 0 and self.status != "CHARGING":
+        
+        # Base charging logic
+        if hasattr(self.model, 'bases'):
+            for b in self.model.bases:
+                bx, by = b.get("x", 9)+0.5, b.get("y", 9)+0.5
+                if math.hypot(bx - self.pos[0], by - self.pos[1]) < 0.5:
+                    self.battery = 100
+                    if self.status == "RETURNING":
+                        self.status = "IDLE"
+
+        if self.battery <= 0:
+            if not self.destroy_reason:
+                pos = getattr(self, "pos", None)
+                if pos:
+                    self.destroy_reason = f"BATTERY_EXHAUSTED at {pos[0]:.2f},{pos[1]:.2f}"
+                else:
+                    self.destroy_reason = "BATTERY_EXHAUSTED"
+                self.destroy_tick = getattr(self.model, "tick_count", None)
             self.status = "GROUNDED"
             self.is_destroyed = True
-            self.model.log_action(self.unique_id, "Battery exhausted — drone lost.")
+            pos = getattr(self, "pos", None)
+            pos_txt = f" at {pos[0]:.2f},{pos[1]:.2f}" if pos else ""
+            self.model.log_action(self.unique_id, f"DRONE LOST: battery exhausted{pos_txt}.")
 
     def move(self, dx: float, dy: float):
         """Move by a delta vector clamped to exactly 1.0 unit magnitude."""
@@ -150,6 +172,7 @@ class DisasterZoneModel(Model):
         obstacles = map_data.get("obstacles", [])
         buildings = map_data.get("buildings", [])
         survivors = map_data.get("survivors", [])
+        self.bases = map_data.get("bases", [{"x": 9, "y": 9}])
 
         for c in obstacles:
             ix, iy = int(c["x"]), int(c["y"])
@@ -173,10 +196,12 @@ class DisasterZoneModel(Model):
             cy = sum(t[1] for t in cluster) / len(cluster) + 0.5
             self.building_clusters.append(BuildingCluster(f"cluster_{i}", cx, cy, cluster))
 
-        # ── Place drones at base centre (9.5, 9.5) ──────────────────────────
+        # ── Place drones at bases ──────────────────────────
+        num_bases = len(self.bases)
         for i in range(config.get("num_drones", 5)):
             drone = DroneAgent(f"drone_{i+1}", self, config.get("drone_battery", 100))
-            self.space.place_agent(drone, (9.5, 9.5))
+            base = self.bases[i % num_bases]
+            self.space.place_agent(drone, (base["x"] + 0.5, base["y"] + 0.5))
             self.schedule.add(drone)
 
         # ── Place survivors ──────────────────────────────────────────────────
@@ -206,8 +231,8 @@ class DisasterZoneModel(Model):
     def sync_to_db(self):
         drone_data = [
             (d.unique_id, d.pos[0], d.pos[1], d.battery, d.status,
-             int(d.is_destroyed), json.dumps(d.thermal_memory),
-             json.dumps(d.assigned_sector))
+             int(d.is_destroyed), json.dumps(d.task_queue), 
+             json.dumps(d.messages_for_commander), d.error_count, json.dumps(d.thermal_memory))
             for d in self.schedule.agents if isinstance(d, DroneAgent)
         ]
         obstacle_data = [
@@ -226,7 +251,7 @@ class DisasterZoneModel(Model):
                 )
 
         building_cluster_data = [
-            (bc.id, bc.cx, bc.cy, int(bc.revealed), len(bc.tiles))
+            (bc.id, bc.cx, bc.cy, int(bc.revealed), len(bc.tiles), bc.assigned_to)
             for bc in self.building_clusters
         ]
 
@@ -241,16 +266,16 @@ class DisasterZoneModel(Model):
         Lightweight sync that pulls ONLY dispatcher-written fields from the DB
         into the in-memory Mesa agents:
           - drone.status      (IDLE → SEARCHING)
-          - drone.assigned_sector  (sector dict or None)
+          - drone.task_queue
         """
         conn = db.get_db_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, status, assigned_sector FROM drones")
-        for (drone_id, status, sector_json) in cursor.fetchall():
+        cursor.execute("SELECT id, status, task_queue FROM drones")
+        for (drone_id, status, queue_json) in cursor.fetchall():
             for agent in self.schedule.agents:
                 if isinstance(agent, DroneAgent) and agent.unique_id == drone_id:
                     agent.status = status
-                    agent.assigned_sector = json.loads(sector_json) if sector_json else None
+                    agent.task_queue = json.loads(queue_json) if queue_json else []
                     break
         conn.close()
 
@@ -261,17 +286,19 @@ class DisasterZoneModel(Model):
             return
         self.tick_count += 1
 
-        # 1. Sync status / sector from DB (source of truth for agent decisions)
+        # 1. Sync status / queues from DB (source of truth for agent decisions)
         conn = db.get_db_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, status, assigned_sector, thermal_memory FROM drones")
+        cursor.execute("SELECT id, status, task_queue, messages_for_commander, error_count, thermal_memory FROM drones")
         drone_rows = {r[0]: r for r in cursor.fetchall()}
         for agent in self.schedule.agents:
             if isinstance(agent, DroneAgent) and agent.unique_id in drone_rows:
                 r = drone_rows[agent.unique_id]
                 agent.status = r[1]
-                agent.assigned_sector = json.loads(r[2]) if r[2] else None
-                agent.thermal_memory  = json.loads(r[3]) if r[3] else []
+                agent.task_queue = json.loads(r[2]) if r[2] else []
+                agent.messages_for_commander = json.loads(r[3]) if r[3] else []
+                agent.error_count = r[4]
+                agent.thermal_memory = json.loads(r[5]) if r[5] else []
 
         # 2. Sync building revealed from DB
         cursor.execute("SELECT id, revealed FROM buildings")
@@ -280,6 +307,14 @@ class DisasterZoneModel(Model):
             for a in self.building_map.values():
                 if a.unique_id == bld_id:
                     a.revealed = bool(rev)
+
+        # Sync assigned_to for building_clusters from DB
+        cursor.execute("SELECT id, assigned_to FROM building_clusters")
+        cluster_assignment = {r[0]: r[1] for r in cursor.fetchall()}
+        for bc in self.building_clusters:
+            if bc.id in cluster_assignment:
+                bc.assigned_to = cluster_assignment[bc.id]
+
         conn.close()
 
         # 3. Apply drone intents
@@ -293,9 +328,6 @@ class DisasterZoneModel(Model):
                 if not drone or drone.is_destroyed:
                     continue
 
-                new_status = intent.get("status", drone.status)
-                drone.status = new_status
-
                 self.step_logs.append({
                     "step": self.tick_count,
                     "drone_id": d_id,
@@ -303,7 +335,7 @@ class DisasterZoneModel(Model):
                     "status": drone.status,
                 })
 
-                if new_status in ["SEARCHING", "RETURNING"]:
+                if drone.status in ["SEARCHING", "RETURNING"]:
                     dx = float(intent.get("dx", 0.0))
                     dy = float(intent.get("dy", 0.0))
 
@@ -318,7 +350,14 @@ class DisasterZoneModel(Model):
                             drone.status = "CRASHED"
                             drone.is_destroyed = True
                             agent_type = "building" if isinstance(collision_agent, BuildingAgent) else "obstacle"
-                            self.log_action(d_id, f"FATAL CRASH: Entered {agent_type} tile at ({tx}, {ty})!")
+                            if not getattr(drone, "destroy_reason", None):
+                                drone.destroy_reason = f"CRASHED_INTO_{agent_type.upper()}_TILE ({tx},{ty})"
+                                drone.destroy_tick = self.tick_count
+                            fx, fy = drone.pos[0], drone.pos[1]
+                            self.log_action(
+                                d_id,
+                                f"DRONE LOST: fatal crash. attempted move dx={dx:.2f},dy={dy:.2f} from {fx:.2f},{fy:.2f} into {agent_type} tile ({tx},{ty})."
+                            )
                         else:
                             drone.move(dx, dy)
 
@@ -371,10 +410,42 @@ class DisasterZoneModel(Model):
             for a in self.schedule.agents
             if isinstance(a, DroneAgent)
         )
-        if any_destroyed:
+        if any_destroyed and not self.mission_failed and not self.mission_complete:
+            destroyed_drones = [
+                a for a in self.schedule.agents
+                if isinstance(a, DroneAgent) and getattr(a, "is_destroyed", False)
+            ]
+            lines = [
+                f"MISSION FAILED (tick {self.tick_count}): drone lost. progress={self.found_survivors}/{self.total_survivors}"
+            ]
+            for d in destroyed_drones:
+                pos = getattr(d, "pos", None)
+                pos_txt = f"{pos[0]:.2f},{pos[1]:.2f}" if pos else "unknown"
+                reason = getattr(d, "destroy_reason", None) or d.status
+                dtick = getattr(d, "destroy_tick", None)
+                dtick_txt = str(dtick) if dtick is not None else "unknown"
+                battery = getattr(d, "battery", None)
+                batt_txt = str(int(battery)) if isinstance(battery, (int, float)) else "unknown"
+
+                last_evt = next((l for l in reversed(self.mission_logs) if l.get("drone_id") == d.unique_id), None)
+                last_msg = last_evt.get("message") if isinstance(last_evt, dict) else None
+                last_tick = last_evt.get("tick") if isinstance(last_evt, dict) else None
+
+                if last_msg is not None and last_tick is not None:
+                    lines.append(
+                        f"- {d.unique_id}: status={d.status} battery={batt_txt} pos={pos_txt} destroy_tick={dtick_txt} reason={reason}\n  last_event(tick {last_tick}): {last_msg}"
+                    )
+                else:
+                    lines.append(
+                        f"- {d.unique_id}: status={d.status} battery={batt_txt} pos={pos_txt} destroy_tick={dtick_txt} reason={reason}"
+                    )
+
+            details = "\n".join(lines) if lines else f"MISSION FAILED (tick {self.tick_count}): unknown drone loss"
             self.mission_failed = True
-        elif self.total_survivors > 0 and self.found_survivors >= self.total_survivors:
+            self.log_action("SYSTEM", details)
+        elif self.total_survivors > 0 and self.found_survivors >= self.total_survivors and not self.mission_complete and not self.mission_failed:
             self.mission_complete = True
+            self.log_action("SYSTEM", f"MISSION COMPLETE (tick {self.tick_count}): rescued {self.found_survivors}/{self.total_survivors} survivors.")
 
         self.sync_to_db()
 
