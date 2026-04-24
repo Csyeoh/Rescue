@@ -56,7 +56,9 @@ export default function DeckApp() {
     discoveredRef,
     seenLogsRef,
     missionReport,
-    setMissionReport
+    setMissionReport,
+    survivorIntel,
+    setSurvivorIntel
   } = useMissionControl();
 
   const clearLogs = () => setLogs([]);
@@ -211,6 +213,11 @@ export default function DeckApp() {
             survivorId={activeTriage.survivorId}
             onIntelReceived={(data) => {
               const intel = data.intel;
+
+              setSurvivorIntel(prev => ({
+                ...prev,
+                [activeTriage.survivorId]: intel
+              }));
               
               // 1. Safely extract arrays into readable strings
               const needs = intel.medical_needs?.length ? intel.medical_needs.join(', ') : 'None';
@@ -242,6 +249,7 @@ export default function DeckApp() {
           selectedSurvivorId={selectedSurvivorId}
           onSelectSurvivor={setSelectedSurvivorId}
           isConnected={isSimulationRunning}
+          survivorIntel={survivorIntel}
         />
 
         {/* ── Compile Map Data Button (Bottom Center) ── */}

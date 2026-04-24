@@ -18,6 +18,7 @@ export const useMissionControl = () => {
   const [survivorsFound, setSurvivorsFound] = useState(0);
   const [survivorsDetected, setSurvivorsDetected] = useState(0);
   const [revealedCells, setRevealedCells] = useState(0);
+  const [survivorIntel, setSurvivorIntel] = useState<Record<string, any>>({});
   const [tickCount, setTickCount] = useState(0);
   const [coverage, setCoverage] = useState<{x: number, y: number}[]>([]);
   const [drones, setDrones] = useState<DroneStatus[]>([]);
@@ -51,6 +52,7 @@ export const useMissionControl = () => {
 
   const resetMission = useCallback(async (newConfig = config) => {
     setActiveTriage(null);
+    setSurvivorIntel({});
     try {
       await resetMissionApi();
     } catch (e) {
@@ -221,6 +223,8 @@ export const useMissionControl = () => {
     discoveredRef,
     seenLogsRef,
     activeTriage,
-    setActiveTriage
+    setActiveTriage,
+    survivorIntel,
+    setSurvivorIntel
   };
 };

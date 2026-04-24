@@ -19,6 +19,7 @@ interface SwarmStatusPanelProps {
   selectedSurvivorId?: string | null;
   onSelectSurvivor?: (id: string | null) => void;
   isConnected?: boolean;
+  survivorIntel?: Record<string, any>;
 }
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -145,6 +146,7 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
   selectedSurvivorId = null,
   onSelectSurvivor,
   isConnected = false,
+  survivorIntel = {}, // Extracted dynamic intel
 }) => {
   const [isOpen, setIsOpen] = useState(true);
   const [activeTab, setActiveTab] = useState<'DRONES' | 'SURVIVORS'>('DRONES');
@@ -152,22 +154,6 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
   const activeDrones = drones.filter((d) => d.status === 'searching' || d.status === 'returning');
   const idleDrones = drones.filter((d) => d.status === 'idle');
   const foundSurvivors = survivors.filter((s) => s.isRescued);
-
-  const getMockCondition = (id: string) => {
-    const severities = ['CRITICAL', 'MODERATE', 'MINOR'] as const;
-    const categories = ['Trauma', 'Burns', 'Exposure', 'Unknown'] as const;
-    let hash = 0;
-    for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-    const severity = severities[hash % severities.length];
-    const category = categories[(hash >>> 8) % categories.length];
-    const aid_suggestion =
-      severity === 'CRITICAL'
-        ? 'Dispatch advanced medical team; prioritize evacuation route.'
-        : severity === 'MODERATE'
-          ? 'Dispatch ground team with first-aid kit and stretcher readiness.'
-          : 'Dispatch support team with water, blankets, and basic assessment.';
-    return { severity, category, aid_suggestion };
-  };
 
   return (
     <div className="absolute right-4 bottom-6 top-24 z-20 flex items-end justify-end pointer-events-none">
@@ -336,7 +322,15 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
                         .sort((a, b) => (a.foundTick ?? Number.MAX_SAFE_INTEGER) - (b.foundTick ?? Number.MAX_SAFE_INTEGER))
                         .map((s) => {
                           const isSelected = selectedSurvivorId === s.id;
-                          const condition = getMockCondition(s.id);
+                          const intel = survivorIntel[s.id]; // Grab live intel
+                          
+                          // Dynamic Styling based on AI Intel Urgency
+                          const urgencyColor = intel 
+                            ? (intel.urgency_level === 'CRITICAL' ? 'text-red-400 border-red-500/30 bg-red-500/10' :
+                               intel.urgency_level === 'HIGH' ? 'text-orange-400 border-orange-500/30 bg-orange-500/10' :
+                               'text-emerald-400 border-emerald-500/30 bg-emerald-500/10')
+                            : 'text-white/50 border-white/10 bg-white/5';
+
                           return (
                             <div
                               key={s.id}
@@ -358,18 +352,38 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
                                 <div className="text-xs text-white/60 font-mono">
                                   Coords: [{s.x.toFixed(1)}, {s.y.toFixed(1)}]
                                 </div>
+                                
+                                {/* Dynamic Intel Block */}
                                 <div className={`mt-2 rounded-lg border px-3 py-2 text-xs ${
                                   isSelected ? 'block' : 'hidden group-hover:block'
                                 }`}
                                 style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.25)' }}
                                 >
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-bold text-red-300">Severity: {condition.severity}</span>
-                                    <span className="text-white/50">Injury: {condition.category}</span>
-                                  </div>
-                                  <div className="mt-1 text-white/60 italic">
-                                    Action: {condition.aid_suggestion}
-                                  </div>
+                                  {intel ? (
+                                    <div className={`flex flex-col gap-2 ${urgencyColor} p-2 rounded -mx-1 -my-1`}>
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="font-bold">Urgency:</span>
+                                          <span className="text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded bg-black/40">
+                                            {intel.urgency_level}
+                                          </span>
+                                        </div>
+                                        <div className="text-white/70">
+                                          <span className="text-white/40 font-semibold mr-1">INJURIES:</span>
+                                          {intel.medical_needs?.length > 0 ? intel.medical_needs.join(', ') : 'None'}
+                                        </div>
+                                        <div className="text-white/70">
+                                          <span className="text-white/40 font-semibold mr-1">SUPPLIES:</span>
+                                          {intel.requested_supplies?.length > 0 ? intel.requested_supplies.join(', ') : 'None'}
+                                        </div>
+                                        <div className="mt-1 pt-1 border-t border-white/10 text-[10px] text-white/40 italic line-clamp-2">
+                                          "{intel.transcription}"
+                                        </div>
+                                    </div>
+                                  ) : (
+                                    <div className="text-center text-white/40 italic py-2">
+                                       Awaiting voice triage...
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
