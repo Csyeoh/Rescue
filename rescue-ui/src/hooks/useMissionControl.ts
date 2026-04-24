@@ -103,15 +103,14 @@ export const useMissionControl = () => {
       const droneCount = data.num_drones || 3;
       const numBases = envState.bases.length || 1;
       const initialDrones: DroneStatus[] = Array.from({ length: droneCount }).map((_, i) => {
-        const angle = (i * 2 * Math.PI) / droneCount;
-        const radius = 0.3;
         const base = envState.bases.length > 0 ? envState.bases[i % numBases] : { x: BASE_X, y: BASE_Y };
         return {
           id: `drone_${i + 1}`,
           battery: 100,
           status: 'idle',
-          x: base.x + 0.5 + Math.cos(angle) * radius,
-          y: base.y + 0.5 + Math.sin(angle) * radius,
+          x: base.x + 0.5,
+          y: base.y + 0.5,
+          z: 0.5,
           stepsTaken: 0
         };
       });
