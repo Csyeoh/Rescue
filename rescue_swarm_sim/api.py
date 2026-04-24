@@ -89,23 +89,25 @@ def abort_mission():
 class VoiceIntelRequest(BaseModel):
     transcript: str
 
+# Update the prompt inside the process_survivor_voice function
 @app.post("/api/survivors/{survivor_id}/voice-intel")
 async def process_survivor_voice(survivor_id: int, payload: VoiceIntelRequest):
-    """Receives text transcript, extracts intel via local LLM, and returns structured data."""
+    """Receives transcript, translates if necessary, and extracts structured data."""
     transcript = payload.transcript
     
-    # We feed the exact transcript string into a text prompt
-    #
+    # Prompt updated to handle English, Malay, Chinese, Tamil, and Thai
     prompt = f"""
-    Analyze the survivor transmission: "{transcript}"
-    Return ONLY valid JSON. 
+    Analyze the following survivor transmission. It may be in English, Malay, Chinese, Tamil, or Thai. 
+    Translate all findings into English and extract them into a strict JSON format.
 
-    IMPORTANT: "medical_needs" and "requested_supplies" MUST be lists of strings, even if empty.
+    Transmission: "{transcript}"
+
+    IMPORTANT: "medical_needs" and "requested_supplies" MUST be lists of strings in English.
 
     {{
         "transcription": "{transcript}",
-        "medical_needs": ["injury1", "injury2"],
-        "requested_supplies": ["item1", "item2"],
+        "medical_needs": ["injury_in_english", "injury_in_english"],
+        "requested_supplies": ["item_in_english", "item_in_english"],
         "urgency_level": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
     }}
     """
@@ -116,20 +118,18 @@ async def process_survivor_voice(survivor_id: int, payload: VoiceIntelRequest):
         if use_local:
             # --- LOCAL OFFLINE MODE (Qwen via Ollama) ---
             raw_model = os.getenv("LOCAL_MODEL", "qwen2.5-coder:7b")
-            # Clean up the name if it has the litellm "ollama/" prefix
             if raw_model.startswith("ollama/"):
                 raw_model = raw_model.replace("ollama/", "")
                 
             ollama_base = os.getenv("OLLAMA_API_BASE", "http://localhost:11434")
             
-            # Send direct request to local Ollama instance
             response = requests.post(
                 f"{ollama_base}/api/generate",
                 json={
                     "model": raw_model,
                     "prompt": prompt,
                     "stream": False,
-                    "format": "json"  # Forces Ollama to strictly output valid JSON
+                    "format": "json" 
                 }
             )
             
@@ -140,7 +140,6 @@ async def process_survivor_voice(survivor_id: int, payload: VoiceIntelRequest):
             
         else:
             # --- FALLBACK CLOUD MODE (Gemini text-only) ---
-            # If your friend still wants to use the API for text extraction
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=[prompt],
@@ -150,16 +149,13 @@ async def process_survivor_voice(survivor_id: int, payload: VoiceIntelRequest):
             )
             raw_text = response.text.strip()
 
-        # Clean JSON if the model accidentally wrapped it in markdown
+        # Clean JSON and parse
         if raw_text.startswith("```json"):
             raw_text = raw_text.replace("```json", "").replace("```", "").strip()
         elif raw_text.startswith("```"):
             raw_text = raw_text.replace("```", "").strip()
             
         intel_data = json.loads(raw_text)
-        
-        # HACKATHON NOTE: For now, we return it to the frontend. 
-        # Later, inject `intel_data` into simulation.sim_world here if needed.
         
         return {"status": "success", "survivor_id": survivor_id, "intel": intel_data}
 
