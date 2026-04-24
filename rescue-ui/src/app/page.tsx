@@ -242,14 +242,6 @@ export default function DeckApp() {
                </>
             ) : "Compile Map Data"}
           </button>
-
-          {/* Add this somewhere visible, like next to your 'Compile Map Data' button */}
-          <button 
-            onClick={() => setActiveTriage({ droneId: 'drone_1', survivorId: 's_99' })}
-            className="bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium px-4 py-2.5 rounded-xl absolute bottom-20 left-1/2 -translate-x-1/2 z-50"
-          >
-            [DEBUG] Force Triage Panel
-          </button>
         </div>
       </motion.div>
       
