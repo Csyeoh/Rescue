@@ -68,4 +68,4 @@ The disaster zone exists in a continuous 20×20 coordinate plane. X ranges from 
 - **Analyze Deeply**: Don't just list facts. Interpret, Reason step by step in details.
 - **Explain Your Logic**: Explain why you chose this exact dx,dy step and tool combination.
 - **Detail Your Plan**: Describe your next steps clearly.
-- **UI Summary**: You **MUST** end your reasoning with a concise 1-sentence summary prefixed with `SUMMARY:`. This summary must be provided in your reasoning/thought process, NEVER in the final JSON output.
+- **UI Summary**: You MUST place a concise 1-sentence summary of your action in the summary field of your final output schema. Do NOT append SUMMARY: as raw text at the end of your thought process, as this will corrupt the structured output validation.
