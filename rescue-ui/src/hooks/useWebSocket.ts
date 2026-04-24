@@ -273,8 +273,10 @@ export const useWebSocket = (props: WebSocketHookProps) => {
                 const newX = Number(ds.x);
 
                 const newY = Number(ds.y);
+                const newZ = Number(ds.z ?? prevD?.z ?? 1.8);
                 const prevX = prevD?.x ?? newX;
                 const prevY = prevD?.y ?? newY;
+                const prevZ = prevD?.z ?? newZ;
 
                 const dx = newX - prevX;
                 const dy = newY - prevY;
@@ -289,7 +291,7 @@ export const useWebSocket = (props: WebSocketHookProps) => {
                 const prevTrail: [number, number, number][] = prevD?.trail ?? [];
                 const trail: [number, number, number][] = [
                   ...prevTrail.slice(-19),
-                  [prevX, prevY, 1.5],
+                  [prevX, prevY, prevZ],
                 ];
 
                 const status: DroneStatus['status'] =
@@ -301,6 +303,7 @@ export const useWebSocket = (props: WebSocketHookProps) => {
                   id,
                   x: newX,
                   y: newY,
+                  z: newZ,
                   battery: Number(ds.battery ?? prevD?.battery ?? 100),
                   status,
                   stepsTaken: (prevD?.stepsTaken ?? 0) + 1,
@@ -319,9 +322,10 @@ export const useWebSocket = (props: WebSocketHookProps) => {
               for (const upd of obstacle_upds) {
                 const x = Math.floor(Number(upd.x));
                 const y = Math.floor(Number(upd.y));
+                const height = upd.height !== undefined && upd.height !== null ? Number(upd.height) : undefined;
                 const idx = newObstacles.findIndex(o => o.x === x && o.y === y);
-                if (idx >= 0) newObstacles[idx] = { ...newObstacles[idx], discovered: Boolean(upd.discovered) };
-                else newObstacles.push({ x, y, discovered: Boolean(upd.discovered) });
+                if (idx >= 0) newObstacles[idx] = { ...newObstacles[idx], discovered: Boolean(upd.discovered), height: height ?? newObstacles[idx].height };
+                else newObstacles.push({ x, y, discovered: Boolean(upd.discovered), height });
               }
               next.obstacles = newObstacles;
 
@@ -329,27 +333,30 @@ export const useWebSocket = (props: WebSocketHookProps) => {
               for (const upd of building_upds) {
                 const x = Math.floor(Number(upd.x));
                 const y = Math.floor(Number(upd.y));
+                const height = upd.height !== undefined && upd.height !== null ? Number(upd.height) : undefined;
                 const idx = newBuildings.findIndex(b => b.x === x && b.y === y);
-                if (idx >= 0) newBuildings[idx] = { ...newBuildings[idx], revealed: Boolean(upd.revealed) };
-                else newBuildings.push({ x, y, revealed: Boolean(upd.revealed) });
+                if (idx >= 0) newBuildings[idx] = { ...newBuildings[idx], revealed: Boolean(upd.revealed), height: height ?? newBuildings[idx].height };
+                else newBuildings.push({ x, y, revealed: Boolean(upd.revealed), height });
                 if (upd.revealed) discoveredRef.current.add(`${x},${y}`);
               }
               next.buildings = newBuildings;
 
               const newSurvivors = [...prevState.survivors];
               for (const s of survivors) {
+                const id = String(s.id ?? '');
                 const x = Math.floor(Number(s.x));
                 const y = Math.floor(Number(s.y));
-                const idx = newSurvivors.findIndex(surv => surv.x === x && surv.y === y);
-                if (idx >= 0) newSurvivors[idx] = { ...newSurvivors[idx], isRescued: Boolean(s.discovered) };
-                else newSurvivors.push({ x, y, isRescued: Boolean(s.discovered) });
+                const foundTick = s.found_tick !== undefined && s.found_tick !== null ? Number(s.found_tick) : null;
+                const resolvedId = id || `survivor_${x}_${y}`;
+                const idx = newSurvivors.findIndex(surv => surv.id === resolvedId);
+                if (idx >= 0) newSurvivors[idx] = { ...newSurvivors[idx], x, y, isRescued: Boolean(s.discovered), foundTick };
+                else newSurvivors.push({ id: resolvedId, x, y, isRescued: Boolean(s.discovered), foundTick });
               }
               next.survivors = newSurvivors;
 
               const rescued = next.survivors.filter(c => c.isRescued).length;
               setSurvivorsFound(rescued);
               setSurvivorsDetected(rescued);
-              setRevealedCells(discoveredRef.current.size);
               return next;
             });
 

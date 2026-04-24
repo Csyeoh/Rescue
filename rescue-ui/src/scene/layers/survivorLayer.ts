@@ -8,7 +8,11 @@ import { SurvivorPoint } from '../../types';
  * Renders survivors using the 3D model placed at public/models/survivor.glb.
  * Differentiates states with color (orange for waiting, cyan for rescued).
  */
-export function createSurvivorLayer(data: SurvivorPoint[], theme: { rescued: number[], waiting: number[] }) {
+export function createSurvivorLayer(
+  data: SurvivorPoint[],
+  theme: { rescued: number[]; waiting: number[] },
+  selectedSurvivorId: string | null,
+) {
   return new ScenegraphLayer({
     id: 'survivors',
     pickable: true,
@@ -18,14 +22,17 @@ export function createSurvivorLayer(data: SurvivorPoint[], theme: { rescued: num
     getPosition: (d: SurvivorPoint) => d.position,
     // Adjust base orientation of survivor model if needed:
     getOrientation: [0, 90, 180],
-    getColor: (d: SurvivorPoint) =>
-      d.rescued
-        ? theme.rescued as any   // Rescued: Grass Green
-        : theme.waiting as any,  // Waiting: Neon Orange
+    getColor: (d: SurvivorPoint) => {
+      if (selectedSurvivorId && d.id === selectedSurvivorId) return [255, 255, 0, 255] as any;
+      return (d.rescued ? theme.rescued : theme.waiting) as any;
+    },
     sizeScale: 1.2,
     _lighting: 'pbr',
     _animations: {
     '*': { speed: 1.0, playing: true } // Plays all animations in the GLB at 1x speed
-    }
+    },
+    updateTriggers: {
+      getColor: [selectedSurvivorId],
+    },
   });
 }

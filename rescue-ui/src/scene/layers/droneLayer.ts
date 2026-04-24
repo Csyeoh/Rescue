@@ -61,7 +61,9 @@ export function createDroneLayer(drones: DroneStatus[], modelUrl: string, theme:
     getPosition: (d: DroneStatus) => {
       // Sit on the base pad (z=0.2) when idle/charging, otherwise fly high (z=1.5)
       const isGrounded = d.status === 'idle' || d.status === 'charging';
-      return [d.x, d.y, isGrounded ? 0.5 : 1.1] as [number, number, number];
+      const fallbackZ = isGrounded ? 0.5 : 1.1;
+      const z = typeof d.z === 'number' && Number.isFinite(d.z) ? d.z : fallbackZ;
+      return [d.x, d.y, z] as [number, number, number];
     },
     getOrientation: (d: DroneStatus) => deriveOrientation(d),
     getColor: (d: DroneStatus) => statusColor(d.status, theme),

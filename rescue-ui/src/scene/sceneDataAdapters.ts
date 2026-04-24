@@ -14,6 +14,7 @@ import { clusterTiles, traceBoundaryPaths } from '../utils/polygon-utils';
 // ---------------------------------------------------------------------------
 
 interface TileCoord { x: number; y: number }
+interface ElevatedTileCoord extends TileCoord { elevation: number }
 
 interface BuildingPoly {
   id: string;
@@ -32,10 +33,10 @@ interface BuildingPoly {
 // ---------------------------------------------------------------------------
 
 export function envToObstacles(env: EnvironmentState, isGodMode: boolean): BuildingPoly[] {
-  const tiles = (env?.obstacles || [])
+  const tiles: ElevatedTileCoord[] = (env?.obstacles || [])
     .filter(o => isGodMode || o.discovered)
-    .map(o => ({ x: Math.floor(o.x), y: Math.floor(o.y) }));
-  return tilesToSmoothedPolygons(tiles, 1.2, false, env?.survivors || []);
+    .map(o => ({ x: Math.floor(o.x), y: Math.floor(o.y), elevation: typeof o.height === 'number' ? o.height : 1.2 }));
+  return tilesToSmoothedPolygons(tiles, false, env?.survivors || []);
 }
 
 // ---------------------------------------------------------------------------
@@ -46,8 +47,10 @@ export function envToSurvivors(env: EnvironmentState): SurvivorPoint[] {
   return (env?.survivors || []).map(s => {
     const z = 0.05;
     return {
+      id: s.id,
       position: [s.x + 0.5, s.y + 0.5, z] as [number, number, number],
       rescued: Boolean(s.isRescued),
+      foundTick: s.foundTick ?? null,
     };
   });
 }
@@ -82,27 +85,33 @@ export function envToThermalPolygons(env: EnvironmentState): ThermalZone[] {
 
 export type { BuildingPoly };
 function tilesToSmoothedPolygons(
-  tiles: TileCoord[],
-  elevation: number,
+  tiles: ElevatedTileCoord[],
   isSolid: boolean,
   survivors: { x: number, y: number, isRescued: boolean }[] = []
 ): BuildingPoly[] {
   if (tiles.length === 0) return [];
-  const clusters = clusterTiles(tiles);
+  const elevationByTile = new Map<string, number>();
+  for (const t of tiles) elevationByTile.set(`${t.x},${t.y}`, t.elevation);
+
+  const clusters = clusterTiles(tiles.map((t) => ({ x: t.x, y: t.y })));
   return clusters.map((cluster: TileCoord[], i: number) => {
     const loops: number[][][] = traceBoundaryPaths(cluster).map((loop: TileCoord[]) =>
       loop.map((p: TileCoord) => [p.x, p.y]),
     );
 
-    // Calculate metadata for tooltips
     const clusterTilesSet = new Set(cluster.map(t => `${Math.floor(t.x)},${Math.floor(t.y)}`));
     const clusterSurvivors = survivors.filter(s => 
       clusterTilesSet.has(`${Math.floor(s.x)},${Math.floor(s.y)}`)
     );
     
-    // Centroid for tooltip location
     const cx = cluster.reduce((sum, t) => sum + t.x, 0) / cluster.length;
     const cy = cluster.reduce((sum, t) => sum + t.y, 0) / cluster.length;
+
+    let elevation = 0;
+    for (const t of cluster) {
+      const e = elevationByTile.get(`${t.x},${t.y}`) ?? 0;
+      if (e > elevation) elevation = e;
+    }
 
     return { 
       id: `poly-${isSolid ? 'b' : 'o'}-${i}`, 
@@ -121,6 +130,10 @@ function tilesToSmoothedPolygons(
 // ---------------------------------------------------------------------------
 
 export function envToBuildings(env: EnvironmentState): BuildingPoly[] {
-  const tiles = (env?.buildings || []).map(b => ({ x: Math.floor(b.x), y: Math.floor(b.y) }));
-  return tilesToSmoothedPolygons(tiles, 1.5, true, env?.survivors || []);
+  const tiles: ElevatedTileCoord[] = (env?.buildings || []).map(b => ({
+    x: Math.floor(b.x),
+    y: Math.floor(b.y),
+    elevation: typeof b.height === 'number' ? b.height : 1.5,
+  }));
+  return tilesToSmoothedPolygons(tiles, true, env?.survivors || []);
 }

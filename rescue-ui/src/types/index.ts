@@ -1,10 +1,14 @@
 export interface EntityCoord { x: number; y: number; }
 
-export interface BuildingNode extends EntityCoord { revealed: boolean; }
+export interface ObstacleNode extends EntityCoord { discovered: boolean; height?: number; }
 
-export interface ObstacleNode extends EntityCoord { discovered: boolean; }
+export interface BuildingNode extends EntityCoord { revealed: boolean; height?: number; }
 
-export interface SurvivorNode extends EntityCoord { isRescued: boolean; }
+export interface SurvivorNode extends EntityCoord {
+  id: string;
+  isRescued: boolean;
+  foundTick?: number | null;
+}
 
 
 
@@ -17,12 +21,20 @@ export interface ThermalScanNode {
   createdAt?: number;
 }
 
+export interface SectorData {
+  drone_id: string;
+  cx: number;
+  cy: number;
+  radius: number;
+}
+
 export interface EnvironmentState {
   buildings: BuildingNode[];
   obstacles: ObstacleNode[];
   survivors: SurvivorNode[];
   thermalScans: ThermalScanNode[];
   bases: EntityCoord[];
+  sectors?: SectorData[];
 }
 
 export interface DroneStatus {
@@ -31,6 +43,7 @@ export interface DroneStatus {
   status: 'searching' | 'returning' | 'charging' | 'idle';
   x: number;
   y: number;
+  z?: number;
   stepsTaken: number;
   heading?: number;                    // yaw in degrees, derived from movement vector
   velocityMag?: number;                // speed magnitude, used for pitch tilt
@@ -38,8 +51,10 @@ export interface DroneStatus {
 }
 
 export interface SurvivorPoint {
+  id: string;
   position: [number, number, number];  // [x, y, z] — z lifted if inside building
   rescued: boolean;                    // true = cyan, false = neon orange
+  foundTick?: number | null;
 }
 
 export interface LogEntry {
@@ -50,7 +65,7 @@ export interface LogEntry {
   message: string;
   type: 'info' | 'warning' | 'success' | 'error' | 'reasoning' | 'tool_call' | 'tool_response';
   details?: {
-    type?: 'reasoning' | 'tool_call' | 'tool_response';
+    type?: 'reasoning' | 'tool_call' | 'tool_response' | 'tool_execution';
     // Reasoning
     thought?: string;          // sentence under [THOUGHT: True]
     // Tool call / response
@@ -75,6 +90,11 @@ export interface CoverageCell {
   y: number; // y_idx (0-39)
 }
 
+export interface CoverageStatsCell extends CoverageCell {
+  physical_visits: number;
+  thermal_scans: number;
+}
+
 export interface ChartDataPoint {
   tick: number;
   coverage: number;
@@ -86,8 +106,15 @@ export interface MissionReport {
   final_coverage: number;
   coverage_percentage: number;
   survivors_found: number;
+  total_survivors?: number;
   discovery_auc: number;
   mean_time_to_discovery: number;
   energy_efficiency: number;
+  physical_cells_unique?: number;
+  thermal_cells_unique?: number;
+  overlap_cells_unique?: number;
+  thermal_overlap_pct?: number;
+  severe_overlap_cells?: number;
+  coverage_stats?: CoverageStatsCell[];
   chart_data: ChartDataPoint[];
 }

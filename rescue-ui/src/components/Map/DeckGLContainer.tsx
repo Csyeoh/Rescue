@@ -40,6 +40,7 @@ interface DeckGLContainerProps {
   isNightMode: boolean;
   showXRay: boolean;
   showSectors: boolean;
+  selectedSurvivorId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,10 +121,11 @@ export default function DeckGLContainer({
   showCoords,
   isNightMode,
   showXRay,
-  showSectors
+  showSectors,
+  selectedSurvivorId: selectedSurvivorIdProp = null
 }: DeckGLContainerProps) {
   const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null);
-  const [selectedSurvivorId, setSelectedSurvivorId] = useState<number | null>(null);
+  const [selectedMicSurvivorId, setSelectedMicSurvivorId] = useState<number | null>(null);
   const [time, setTime] = useState(0);
 
   // ── Animation Loop ──
@@ -156,7 +158,7 @@ export default function DeckGLContainer({
 
       // 1. Transient scans and Survivors
       createThermalLayer(thermalData, time),
-      createSurvivorLayer(survivorData, theme.survivor),
+      createSurvivorLayer(survivorData, theme.survivor, selectedSurvivorIdProp),
 
       // 2. Static environment
       createBuildingLayer(buildingData, hoveredBuildingId, {
@@ -170,7 +172,7 @@ export default function DeckGLContainer({
       }),
 
       // 3. Base station beacon
-      createBaseLayer({ color: theme.base, line: theme.baseLine }),
+      createBaseLayer({ color: theme.base, line: theme.baseLine, bases: environmentState.bases }),
 
       // 4. Flight trails and Sectors
       createTrailLayer(drones),
@@ -208,7 +210,7 @@ export default function DeckGLContainer({
         outlineColor: [0, 0, 0, 128],
       }),
     ];
-  }, [buildingData, obstacleData, thermalData, survivorData, drones, environmentState.sectors, hoveredBuildingId, time, showCoords, showSectors, isNightMode]);
+  }, [buildingData, obstacleData, thermalData, survivorData, drones, environmentState.sectors, hoveredBuildingId, time, showCoords,showSectors, isNightMode, selectedSurvivorIdProp]);
 
   // ── Lighting Rig ──
   const effect = useMemo(() => createLightingEffect(isNightMode), [isNightMode]);
@@ -235,11 +237,22 @@ export default function DeckGLContainer({
 
         onClick={(info) => {
           if (info.layer?.id === 'survivors' && info.object) {
-            // Assuming your survivor object has an 'id'. If it uses index, use info.index.
-            setSelectedSurvivorId(info.object.id || info.index);
+            const rawId = (info.object as any)?.id;
+            let numericId: number | null = null;
+            if (typeof rawId === 'number') {
+              numericId = rawId;
+            } else if (typeof rawId === 'string') {
+              const digits = rawId.replace(/[^\d]/g, '');
+              const parsed = digits ? Number(digits) : NaN;
+              numericId = Number.isFinite(parsed) ? parsed : null;
+            }
+            if (numericId === null && typeof (info as any).index === 'number') {
+              numericId = (info as any).index;
+            }
+            setSelectedMicSurvivorId(numericId);
           } else {
             // Clicked somewhere else, dismiss the mic
-            setSelectedSurvivorId(null);
+            setSelectedMicSurvivorId(null);
           }
         }}
 
@@ -293,9 +306,15 @@ export default function DeckGLContainer({
               `;
               break;
             case 'survivors':
-              title = 'Survivor';
+              title = `Survivor: ${object.id ?? ''}`;
               displayX = (object.position[0]).toFixed(2);
               displayY = (object.position[1]).toFixed(2);
+              content = `
+                <div class="flex flex-col gap-1 mt-1">
+                  <div class="flex justify-between gap-4"><span>Status:</span><span class="font-bold text-emerald-500">${object.rescued ? 'Located' : 'Unconfirmed'}</span></div>
+                  <div class="flex justify-between gap-4"><span>Found tick:</span><span class="font-bold text-azure-mid">${object.foundTick ?? '—'}</span></div>
+                </div>
+              `;
               break;
             default:
               return null;
@@ -329,9 +348,9 @@ export default function DeckGLContainer({
       />
 
       {/* 2. RENDER THE MIC UI WHEN A SURVIVOR IS SELECTED */}
-      {selectedSurvivorId !== null && (
+      {selectedMicSurvivorId !== null && (
         <SurvivorMic
-          survivorId={selectedSurvivorId}
+          survivorId={selectedMicSurvivorId}
           
           onIntelReceived={(intelData) => {
             console.log("INTEL RECEIVED:", intelData);

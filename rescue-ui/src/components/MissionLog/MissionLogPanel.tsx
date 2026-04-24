@@ -105,15 +105,19 @@ export const MissionLogPanel: React.FC<MissionLogPanelProps> = ({
                 </div>
                 {log.details && log.details.type === 'reasoning' && (
                   <div className="mt-1 bg-white/5 rounded-md p-3 text-[12px] text-white/80 border border-white/10 overflow-x-auto">
-                    <p className="font-semibold text-azure-light mb-1">Plan (Task: {log.details.task_id}) - Ready: {log.details.ready ? 'Yes' : 'No'}</p>
-                    <pre className="whitespace-pre-wrap font-mono">{log.details.plan}</pre>
+                    <p className="font-semibold text-azure-light mb-1">
+                      Plan (Task: {String(log.details.task_id ?? '')}) - Ready: {Boolean(log.details.ready) ? 'Yes' : 'No'}
+                    </p>
+                    <pre className="whitespace-pre-wrap font-mono">
+                      {typeof log.details.plan === 'string' ? log.details.plan : JSON.stringify(log.details.plan, null, 2)}
+                    </pre>
                   </div>
                 )}
                 {log.details && log.details.type === 'tool_execution' && (
                   <div className="mt-1 bg-white/5 rounded-md p-3 text-[12px] text-white/80 border border-white/10 overflow-x-auto">
                     <div className="flex justify-between items-center mb-1">
-                      <p className="font-semibold text-emerald-400">Tool Executed: {log.details.tool_name}</p>
-                      {log.details.execution_duration_ms && (
+                      <p className="font-semibold text-emerald-400">Tool Executed: {String(log.details.tool_name ?? '')}</p>
+                      {typeof log.details.execution_duration_ms === 'number' && (
                         <span className="text-white/40">{Math.round(log.details.execution_duration_ms)}ms</span>
                       )}
                     </div>
