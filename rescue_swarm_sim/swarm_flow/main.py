@@ -261,26 +261,32 @@ class SwarmCombinedFlow:
         
         session = await self.session_service.get_session(app_name="rescue_swarm", user_id="swarm_commander", session_id="mission_drones_parallel")
         for d_id in drone_ids:
+            # Look for the output key we defined in rescue_crew.py
             intent_data = session.state.get(f"raw_intent_{d_id}") if session else None
             
             if intent_data:
                 try:
-                    if isinstance(intent_data, str):
-                        intent_obj = json.loads(intent_data)
-                    elif hasattr(intent_data, "model_dump"): # Handle pydantic object
+                    if hasattr(intent_data, "model_dump"): # Handle pydantic object
                         intent_obj = intent_data.model_dump()
                     elif isinstance(intent_data, dict):
                         intent_obj = intent_data
+                    elif isinstance(intent_data, str):
+                        intent_obj = json.loads(intent_data)
                     else:
                         intent_obj = dict(intent_data)
                     
-                    if "drone_id" not in intent_obj:
+                    # Ensure drone_id and status exist
+                    if not intent_obj.get("drone_id"):
                          intent_obj["drone_id"] = d_id
+                    if not intent_obj.get("status"):
+                         intent_obj["status"] = "IDLE"
+                    
                     batch_intents[d_id] = intent_obj
                 except Exception as e:
                     self.log_to_file(f"[ERROR] Failed to parse intent for {d_id}: {e}")
             else:
-                self.log_to_file(f"[WARNING] No intent found in session state for {d_id}.")
+                self.log_to_file(f"[WARNING] No intent found in session state for {d_id}. Defaulting to IDLE.")
+                batch_intents[d_id] = {"drone_id": d_id, "dx": 0.0, "dy": 0.0, "status": "IDLE"}
 
         # 3. Physics Step
         self.log_to_file(f"PHASE: Physics - Applying {len(batch_intents)} drone intents.")

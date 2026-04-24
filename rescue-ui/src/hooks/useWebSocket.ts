@@ -14,6 +14,7 @@ interface WebSocketHookProps {
   setSurvivorsDetected: (val: number) => void;
   setRevealedCells: (val: number | ((prev: number) => number)) => void;
   setTickCount: (val: number) => void;
+  setMissionReport: (report: any | null) => void;
   setCoverage: (val: {x: number, y: number}[] | ((prev: {x: number, y: number}[]) => {x: number, y: number}[])) => void;
   addLog: (agent: string, message: string, type?: LogEntry['type'], details?: LogEntry['details'], tick?: number) => void;
   discoveredRef: React.MutableRefObject<Set<string>>;
@@ -393,6 +394,13 @@ export const useWebSocket = (props: WebSocketHookProps) => {
             setIsSimulationRunning(false);
             return;
           }
+
+          if (msg.type === 'MISSION_REPORT') {
+          addLog('SYSTEM', 'Post-Mission Telemetry Report generated.', 'success');
+          propsRef.current.setMissionReport(msg.payload);
+          return;
+        }
+        
         } catch (e: any) {
           console.error('WS message error:', e);
           addLog('SYSTEM', `WS Error: ${e.message || 'Unknown error'}`, 'warning');

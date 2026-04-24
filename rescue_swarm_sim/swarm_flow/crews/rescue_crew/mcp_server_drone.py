@@ -139,7 +139,7 @@ def get_drone_context(drone_id: str) -> dict:
 
 
 @mcp.tool()
-def get_navigation_step(drone_id: str, target_x: float, target_y: float) -> dict:
+def mcp_get_navigation_step(drone_id: str, target_x: float, target_y: float) -> dict:
     """
     Calculates the optimal next step (dx, dy) to reach a target coordinate.
     Maximum step distance is 1.0 units. 

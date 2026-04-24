@@ -74,6 +74,24 @@ def abort_mission():
             simulation.sim_world.generate_log_file()
     return {"status": "success", "message": "Aborted."}
 
+
+@app.post("/api/mission/killswitch")
+def trigger_killswitch():
+    import simulation
+    import websocket_manager
+    import db
+    
+    if simulation.sim_world:
+        simulation.sim_world.mission_complete = True
+        
+        # 1. Generate the math
+        report = db.generate_mission_report()
+        
+        # 2. Push it instantly to the React UI!
+        websocket_manager.send_to_ui("MISSION_REPORT", report)
+        
+    return {"status": "success", "message": "Mission halted and report generated."}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     try:
@@ -94,3 +112,20 @@ async def websocket_endpoint(websocket: WebSocket):
         pass
     finally:
         websocket_manager.manager.disconnect(websocket)
+
+
+@app.get("/api/mission/report")
+def get_mission_report():
+    """Generates the post-mission telemetry and efficiency report."""
+    import db
+    try:
+        report_data = db.generate_mission_report()
+        if "error" in report_data:
+            return {"status": "error", "message": report_data["error"]}
+            
+        return {
+            "status": "success",
+            "report": report_data
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to generate report: {str(e)}"}

@@ -449,6 +449,23 @@ class DisasterZoneModel(Model):
 
         self.sync_to_db()
 
+        # --- NEW: 6. Log Telemetry for Post-Mission Report ---
+        import time
+        total_battery_capacity = 0
+        current_battery = 0
+        
+        for a in self.schedule.agents:
+            if isinstance(a, DroneAgent):
+                # Assuming starting battery is 100
+                total_battery_capacity += getattr(a, 'max_battery', 100) 
+                current_battery += a.battery
+                
+        # Net battery used (charging will reduce this net amount, 
+        # but it gives us a good proxy for overall energy expenditure)
+        total_battery_consumed = total_battery_capacity - current_battery
+        
+        db.log_telemetry(self.tick_count, time.time(), total_battery_consumed)
+
 sim_world = None
 
 def initialize_world(config=None):

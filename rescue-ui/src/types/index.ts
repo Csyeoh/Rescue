@@ -74,3 +74,20 @@ export interface CoverageCell {
   x: number; // x_idx (0-39)
   y: number; // y_idx (0-39)
 }
+
+export interface ChartDataPoint {
+  tick: number;
+  coverage: number;
+  survivors: number;
+}
+
+export interface MissionReport {
+  mission_duration_ticks: number;
+  final_coverage: number;
+  coverage_percentage: number;
+  survivors_found: number;
+  discovery_auc: number;
+  mean_time_to_discovery: number;
+  energy_efficiency: number;
+  chart_data: ChartDataPoint[];
+}
