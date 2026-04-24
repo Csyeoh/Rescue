@@ -172,7 +172,7 @@ export default function DeckGLContainer({
       }),
 
       // 3. Base station beacon
-      createBaseLayer({ color: theme.base, line: theme.baseLine }),
+      createBaseLayer({ color: theme.base, line: theme.baseLine, bases: environmentState.bases }),
 
       // 4. Flight trails and Sectors
       createTrailLayer(drones),

@@ -101,15 +101,13 @@ export const useMissionControl = () => {
 
       // Spaced-out drone initialization at bases
       const droneCount = data.num_drones || 3;
-      const numBases = envState.bases.length || 1;
       const initialDrones: DroneStatus[] = Array.from({ length: droneCount }).map((_, i) => {
-        const base = envState.bases.length > 0 ? envState.bases[i % numBases] : { x: BASE_X, y: BASE_Y };
         return {
           id: `drone_${i + 1}`,
           battery: 100,
           status: 'idle',
-          x: base.x + 0.5,
-          y: base.y + 0.5,
+          x: BASE_X + 0.5,
+          y: BASE_Y + 0.5,
           z: 0.5,
           stepsTaken: 0
         };
