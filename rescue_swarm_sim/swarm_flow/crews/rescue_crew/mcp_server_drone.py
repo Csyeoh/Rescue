@@ -85,6 +85,26 @@ def get_drone_context(drone_id: str) -> dict:
     # Optical Scan use to scan for surroundings entities
     detected = []
 
+    # Obstacles
+    cursor.execute("SELECT id, x, y FROM obstacles")
+    for obs_id, ox, oy in cursor.fetchall():
+        dist = math.hypot(cx - ox, cy - oy)
+        if dist <= 1.0:
+            cursor.execute("UPDATE obstacles SET discovered=1 WHERE id=?", (obs_id,))
+            detected.append({
+                "type": "OBSTACLE", "distance": round(dist, 2), "angle_deg": _bearing(cx, cy, ox, oy)
+            })
+
+    # Buildings
+    cursor.execute("SELECT id, x, y FROM buildings")
+    for bld_id, bx, by in cursor.fetchall():
+        dist = math.hypot(cx - bx, cy - by)
+        if dist <= 1.0:
+            cursor.execute("UPDATE buildings SET revealed=1 WHERE id=?", (bld_id,))
+            detected.append({
+                "type": "BUILDING", "distance": round(dist, 2), "angle_deg": _bearing(cx, cy, bx, by)
+            })
+
     # Survivors
     cursor.execute("SELECT id, x, y FROM survivors WHERE found=0")
     for s_id, sx, sy in cursor.fetchall():
@@ -404,77 +424,6 @@ def remove_thermal_noise(drone_id: str, x: float, y: float) -> dict:
     conn.commit()
     conn.close()
     return {"summary": f"Thermal noise near ({x}, {y}) has been wiped from memory."}
-
-
-@mcp.tool()
-def navigate_to(drone_id: str, x: float, y: float) -> dict:
-    """
-    Sets a destination for the drone and calculates an autonomous path.
-    The drone will move unit-by-unit along waypoints until it reaches (x, y).
-    Validates for crashes against known obstacles.
-    """
-    conn = db.get_db_conn()
-    cursor = conn.cursor()
-    
-    # 1. Get current pos
-    cursor.execute("SELECT x, y, status FROM drones WHERE id=?", (drone_id,))
-    row = cursor.fetchone()
-    if not row:
-        conn.close()
-        return {"error": "Drone not found"}
-    cx, cy, status = row
-    
-    if status == "CRASHED":
-        conn.close()
-        return {"error": "This drone is destroyed and cannot move."}
-
-    # 2. Get obstacles for crash validation
-    cursor.execute("SELECT x, y FROM obstacles")
-    obs = {(int(r[0]), int(r[1])) for r in cursor.fetchall()}
-    cursor.execute("SELECT x, y FROM buildings")
-    obs.update({(int(r[0]), int(r[1])) for r in cursor.fetchall()})
-
-    # 3. Pathfinding (Simple 1-unit step waypoints towards target)
-    waypoints = []
-    curr_x, curr_y = cx, cy
-    max_steps = 100 # Safety limit
-    
-    steps_count = 0
-    while math.hypot(x - curr_x, y - curr_y) >= 0.5 and steps_count < max_steps:
-        steps_count += 1
-        vx, vy = x - curr_x, y - curr_y
-        dist = math.hypot(vx, vy)
-        step_mag = min(1.0, dist)
-        ux, uy = vx / dist, vy / dist
-        
-        next_x = curr_x + ux * step_mag
-        next_y = curr_y + uy * step_mag
-        
-        # Crash validation
-        tx, ty = int(next_x), int(next_y)
-        if (tx, ty) in obs:
-            # CRASH!
-            cursor.execute("UPDATE drones SET status='CRASHED', is_destroyed=1 WHERE id=?", (drone_id,))
-            cursor.execute("UPDATE mission_metadata SET value='1' WHERE key='mission_failed'")
-            conn.commit()
-            conn.close()
-            return {"summary": f"CRITICAL: Drone {drone_id} crashed into obstacle at ({tx}, {ty}) during path calculation. MISSION FAILED."}
-            
-        waypoints.append([round(next_x, 2), round(next_y, 2)])
-        curr_x, curr_y = next_x, next_y
-
-    # 4. Save to DB
-    cursor.execute(
-        "UPDATE drones SET target_x=?, target_y=?, waypoints=?, status='SEARCHING' WHERE id=?",
-        (x, y, json.dumps(waypoints), drone_id)
-    )
-    conn.commit()
-    conn.close()
-    
-    return {
-        "summary": f"Target set to ({x}, {y}). Path calculated with {len(waypoints)} waypoints.",
-        "waypoints": waypoints
-    }
 
 
 if __name__ == "__main__":

@@ -69,22 +69,6 @@ export const useWebSocket = (props: WebSocketHookProps) => {
       }
 
       console.log('[WS] Connecting to', WS_URL);
-      const {
-        isSimulationRunning,
-        revealedCells,
-        setIsSimulationRunning,
-        setDrones,
-        setEnvironmentState,
-        setSurvivorsFound,
-        setSurvivorsDetected,
-        setRevealedCells,
-        setTickCount,
-        setCoverage,
-        addLog,
-        discoveredRef,
-        seenLogsRef,
-      } = propsRef.current;
-
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
@@ -123,6 +107,21 @@ export const useWebSocket = (props: WebSocketHookProps) => {
 
       ws.onmessage = (event) => {
         if (!isMounted) return;
+        const {
+          isSimulationRunning,
+          revealedCells,
+          setIsSimulationRunning,
+          setDrones,
+          setEnvironmentState,
+          setSurvivorsFound,
+          setSurvivorsDetected,
+          setRevealedCells,
+          setTickCount,
+          setCoverage,
+          addLog,
+          discoveredRef,
+          seenLogsRef,
+        } = propsRef.current;
 
         try {
           const msg = JSON.parse(event.data);
@@ -215,17 +214,6 @@ export const useWebSocket = (props: WebSocketHookProps) => {
                 }
               ],
             }));
-            return;
-          }
-
-          if (msg.type === 'path_update') {
-            const payload = msg.payload ?? {};
-            const droneId = String(payload.drone_id);
-            const waypoints = Array.isArray(payload.waypoints) ? payload.waypoints : [];
-            
-            if (waypoints.length > 0) {
-              moveAlongWaypoints(droneId, waypoints);
-            }
             return;
           }
 
@@ -416,49 +404,6 @@ export const useWebSocket = (props: WebSocketHookProps) => {
         } catch (e: any) {
           console.error('WS message error:', e);
           addLog('SYSTEM', `WS Error: ${e.message || 'Unknown error'}`, 'warning');
-        }
-      };
-
-      // ── Autonomous Movement Helper ─────────────────────────────────────────
-      const moveAlongWaypoints = async (droneId: string, waypoints: [number, number][]) => {
-        for (const [nx, ny] of waypoints) {
-          if (!isMounted) break;
-          
-          setDrones((prev) => {
-            const prevD = prev.find(d => d.id === droneId);
-            if (!prevD) return prev;
-            
-            const dx = nx - prevD.x;
-            const dy = ny - prevD.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const heading = dist > 0.01 ? Math.atan2(dy, dx) * (180 / Math.PI) : (prevD.heading ?? 0);
-            
-            // Update trail
-            const trail: [number, number, number][] = [
-              ...prevD.trail?.slice(-19) || [],
-              [prevD.x, prevD.y, 1.5]
-            ];
-            
-            return prev.map(d => d.id === droneId ? {
-              ...d,
-              x: nx,
-              y: ny,
-              heading,
-              velocityMag: 1.0,
-              trail
-            } : d);
-          });
-          
-          // Continuous coverage revelation
-          const ix = Math.floor(nx * 2);
-          const iy = Math.floor(ny * 2);
-          setCoverage(prev => {
-            if (prev.some(c => c.x === ix && c.y === iy)) return prev;
-            return [...prev, { x: ix, y: iy }];
-          });
-          
-          // Small delay for smooth animation between unit steps
-          await new Promise(r => setTimeout(r, 200)); 
         }
       };
     };

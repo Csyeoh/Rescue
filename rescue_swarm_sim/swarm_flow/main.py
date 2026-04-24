@@ -201,29 +201,6 @@ class SwarmCombinedFlow:
                             "result_message": result_message,
                         })
 
-                        # Special case: navigate_to tool broadcast waypoints to UI
-                        if clean_tool_name == "navigate_to":
-                            try:
-                                # The response might be a JSON string or dict depending on the MCP server type
-                                waypoints = None
-                                if isinstance(raw, dict):
-                                    sc = raw.get("structuredContent", {})
-                                    if isinstance(sc, dict) and "waypoints" in sc:
-                                        waypoints = sc["waypoints"]
-                                    else:
-                                        content_list = raw.get("content", [])
-                                        if content_list and "text" in content_list[0]:
-                                            parsed = json.loads(content_list[0]["text"])
-                                            waypoints = parsed.get("waypoints")
-                                
-                                if waypoints:
-                                    websocket_manager.send_to_ui("path_update", {
-                                        "drone_id": (event.author or agent.name),
-                                        "waypoints": waypoints
-                                    })
-                            except Exception as e:
-                                self.log_to_file(f"ERROR: Failed to broadcast waypoints: {e}")
-
             await runner.close()
             return final_text
         except (Exception, BaseExceptionGroup) as e:
@@ -295,9 +272,41 @@ class SwarmCombinedFlow:
         parallel_agent = self.rescue_crew.get_parallel_pilot_agent(drone_ids)
         await self.run_agent(parallel_agent, f"Determine your next tactical move.", session_id="mission_drones_parallel")
                 
+        # Extract individual intents from ParallelAgent session state
+        batch_intents = {}
+        
+        session = await self.session_service.get_session(app_name="rescue_swarm", user_id="swarm_commander", session_id="mission_drones_parallel")
+        for d_id in drone_ids:
+            # Look for the output key we defined in rescue_crew.py
+            intent_data = session.state.get(f"raw_intent_{d_id}") if session else None
+            
+            if intent_data:
+                try:
+                    if hasattr(intent_data, "model_dump"): # Handle pydantic object
+                        intent_obj = intent_data.model_dump()
+                    elif isinstance(intent_data, dict):
+                        intent_obj = intent_data
+                    elif isinstance(intent_data, str):
+                        intent_obj = json.loads(intent_data)
+                    else:
+                        intent_obj = dict(intent_data)
+                    
+                    # Ensure drone_id and status exist
+                    if not intent_obj.get("drone_id"):
+                         intent_obj["drone_id"] = d_id
+                    if not intent_obj.get("status"):
+                         intent_obj["status"] = "IDLE"
+                    
+                    batch_intents[d_id] = intent_obj
+                except Exception as e:
+                    self.log_to_file(f"[ERROR] Failed to parse intent for {d_id}: {e}")
+            else:
+                self.log_to_file(f"[WARNING] No intent found in session state for {d_id}. Defaulting to IDLE.")
+                batch_intents[d_id] = {"drone_id": d_id, "dx": 0.0, "dy": 0.0, "status": "IDLE"}
+
         # 3. Physics Step
-        self.log_to_file("PHASE: Physics - Syncing world state.")
-        simulation.sim_world.step()
+        self.log_to_file(f"PHASE: Physics - Applying {len(batch_intents)} drone intents.")
+        simulation.sim_world.step(batch_intents)
         
         # 4. UI Update
         from .tools.state_reader import get_current_map_state, get_coverage_state

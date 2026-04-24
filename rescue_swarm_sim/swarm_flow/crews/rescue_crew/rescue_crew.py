@@ -19,6 +19,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from .drone_tools import get_navigation_step
+
+class DroneIntent(BaseModel):
+    drone_id: str  = Field(default="", description="The ID of the drone")
+    dx: float      = Field(0.0, description="Movement delta X (-1.0 to 1.0). Combined magnitude with dy must be ≤ 1.0.")
+    dy: float      = Field(0.0, description="Movement delta Y (-1.0 to 1.0). Combined magnitude with dx must be ≤ 1.0.")
+    summary: str   = Field(default="", description="A brief summary of the drone's current state and surroundings.")
 
 class RescueCrew:
     def __init__(self):
@@ -90,7 +97,9 @@ class RescueCrew:
                 description=f"Pilot for {drone_id}",
                 instruction=instruction,
                 model=self.model,
-                tools=[drone_mcp_toolset],
+                tools=[drone_mcp_toolset, get_navigation_step],
+                output_key=f"raw_intent_{drone_id}", 
+                output_schema=DroneIntent,
                 planner=BuiltInPlanner(
                     thinking_config=types.ThinkingConfig(
                         include_thoughts=True,
