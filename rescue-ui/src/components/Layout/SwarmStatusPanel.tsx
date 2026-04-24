@@ -8,14 +8,16 @@ import {
   Cpu,
   Battery,
   Navigation,
-  Target,
   Wifi,
   WifiOff,
 } from 'lucide-react';
-import { DroneStatus } from '../../types';
+import { DroneStatus, SurvivorNode } from '../../types';
 
 interface SwarmStatusPanelProps {
   drones: DroneStatus[];
+  survivors?: SurvivorNode[];
+  selectedSurvivorId?: string | null;
+  onSelectSurvivor?: (id: string | null) => void;
   isConnected?: boolean;
 }
 
@@ -139,12 +141,33 @@ const DroneStatusCard: React.FC<{
 
 export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
   drones,
+  survivors = [],
+  selectedSurvivorId = null,
+  onSelectSurvivor,
   isConnected = false,
 }) => {
   const [isOpen, setIsOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<'DRONES' | 'SURVIVORS'>('DRONES');
 
   const activeDrones = drones.filter((d) => d.status === 'searching' || d.status === 'returning');
   const idleDrones = drones.filter((d) => d.status === 'idle');
+  const foundSurvivors = survivors.filter((s) => s.isRescued);
+
+  const getMockCondition = (id: string) => {
+    const severities = ['CRITICAL', 'MODERATE', 'MINOR'] as const;
+    const categories = ['Trauma', 'Burns', 'Exposure', 'Unknown'] as const;
+    let hash = 0;
+    for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    const severity = severities[hash % severities.length];
+    const category = categories[(hash >>> 8) % categories.length];
+    const aid_suggestion =
+      severity === 'CRITICAL'
+        ? 'Dispatch advanced medical team; prioritize evacuation route.'
+        : severity === 'MODERATE'
+          ? 'Dispatch ground team with first-aid kit and stretcher readiness.'
+          : 'Dispatch support team with water, blankets, and basic assessment.';
+    return { severity, category, aid_suggestion };
+  };
 
   return (
     <div className="absolute right-4 bottom-6 top-24 z-20 flex items-end justify-end pointer-events-none">
@@ -224,7 +247,7 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
 
                   <div className="flex-1 min-w-0">
                     <span className="text-[15px] font-semibold text-mint-bg/90 tracking-wide">
-                      Swarm Status
+                      {activeTab === 'DRONES' ? 'Swarm Status' : 'Survivor Triage'}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5">
                       {isConnected ? (
@@ -238,7 +261,9 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
                       )}
                       <span className="text-[13px] text-white/30">·</span>
                       <span className="text-[13px] text-white/40 font-mono">
-                        {drones.length} drone{drones.length !== 1 ? 's' : ''}
+                        {activeTab === 'DRONES'
+                          ? `${drones.length} drone${drones.length !== 1 ? 's' : ''}`
+                          : `${foundSurvivors.length} found`}
                       </span>
                       {activeDrones.length > 0 && (
                         <>
@@ -252,7 +277,29 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
                   </div>
                 </div>
 
-                {/* ── Drone list ── */}
+                <div className="px-3 pt-3">
+                  <div className="flex gap-2 p-1 rounded-xl border" style={{ borderColor: 'rgba(65,110,111,0.25)', background: 'rgba(0,0,0,0.15)' }}>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('DRONES')}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
+                        activeTab === 'DRONES' ? 'bg-azure-mid text-white' : 'text-white/50 hover:text-white'
+                      }`}
+                    >
+                      Swarm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('SURVIVORS')}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors ${
+                        activeTab === 'SURVIVORS' ? 'bg-red-600 text-white' : 'text-white/50 hover:text-white'
+                      }`}
+                    >
+                      Survivors
+                    </button>
+                  </div>
+                </div>
+
                 <div
                   className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-2.5 min-h-0"
                   style={{
@@ -260,27 +307,82 @@ export const SwarmStatusPanel: React.FC<SwarmStatusPanelProps> = ({
                     scrollbarColor: 'rgba(65,110,111,0.4) transparent',
                   }}
                 >
-                  {drones.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full gap-3 opacity-30">
-                      <Cpu size={28} className="text-azure-mid" />
-                      <span className="text-sm text-white/50 font-mono">
-                        No drones deployed
-                      </span>
-                    </div>
+                  {activeTab === 'DRONES' ? (
+                    drones.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full gap-3 opacity-30">
+                        <Cpu size={28} className="text-azure-mid" />
+                        <span className="text-sm text-white/50 font-mono">
+                          No drones deployed
+                        </span>
+                      </div>
+                    ) : (
+                      drones.map((drone) => (
+                        <DroneStatusCard
+                          key={drone.id}
+                          drone={drone}
+                        />
+                      ))
+                    )
                   ) : (
-                    drones.map((drone) => (
-                      <DroneStatusCard
-                        key={drone.id}
-                        drone={drone}
-                      />
-                    ))
+                    foundSurvivors.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-full gap-3 opacity-30">
+                        <span className="text-sm text-white/50 font-mono">
+                          No survivors located
+                        </span>
+                      </div>
+                    ) : (
+                      foundSurvivors
+                        .slice()
+                        .sort((a, b) => (a.foundTick ?? Number.MAX_SAFE_INTEGER) - (b.foundTick ?? Number.MAX_SAFE_INTEGER))
+                        .map((s) => {
+                          const isSelected = selectedSurvivorId === s.id;
+                          const condition = getMockCondition(s.id);
+                          return (
+                            <div
+                              key={s.id}
+                              className={`group rounded-xl border transition-all cursor-pointer ${
+                                isSelected ? 'border-yellow-400/70' : 'border-azure-dark/30'
+                              }`}
+                              style={{ background: isSelected ? 'rgba(255,255,255,0.06)' : 'rgba(15,31,31,0.5)' }}
+                              onClick={() => onSelectSurvivor?.(isSelected ? null : s.id)}
+                            >
+                              <div className="px-4 py-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-bold text-white tracking-tight">
+                                    Target {s.id}
+                                  </span>
+                                  <span className="text-[11px] text-white/40 font-mono">
+                                    Found @ Tick {s.foundTick ?? '—'}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-white/60 font-mono">
+                                  Coords: [{s.x.toFixed(1)}, {s.y.toFixed(1)}]
+                                </div>
+                                <div className={`mt-2 rounded-lg border px-3 py-2 text-xs ${
+                                  isSelected ? 'block' : 'hidden group-hover:block'
+                                }`}
+                                style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.25)' }}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-red-300">Severity: {condition.severity}</span>
+                                    <span className="text-white/50">Injury: {condition.category}</span>
+                                  </div>
+                                  <div className="mt-1 text-white/60 italic">
+                                    Action: {condition.aid_suggestion}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                    )
                   )}
                 </div>
 
                 {/* Empty strip space */}
                 <div className="px-4 py-2.5 border-t shrink-0 flex items-center justify-end" style={{ borderColor: 'rgba(65,110,111,0.25)' }}>
                     <span className="text-xs text-white/25 font-mono">
-                      {idleDrones.length} idle
+                      {activeTab === 'DRONES' ? `${idleDrones.length} idle` : 'Hover for triage details'}
                     </span>
                 </div>
               </div>

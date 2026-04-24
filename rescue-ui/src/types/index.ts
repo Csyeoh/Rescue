@@ -4,7 +4,11 @@ export interface BuildingNode extends EntityCoord { revealed: boolean; }
 
 export interface ObstacleNode extends EntityCoord { discovered: boolean; }
 
-export interface SurvivorNode extends EntityCoord { isRescued: boolean; }
+export interface SurvivorNode extends EntityCoord {
+  id: string;
+  isRescued: boolean;
+  foundTick?: number | null;
+}
 
 
 
@@ -38,8 +42,10 @@ export interface DroneStatus {
 }
 
 export interface SurvivorPoint {
+  id: string;
   position: [number, number, number];  // [x, y, z] — z lifted if inside building
   rescued: boolean;                    // true = cyan, false = neon orange
+  foundTick?: number | null;
 }
 
 export interface LogEntry {
@@ -75,6 +81,11 @@ export interface CoverageCell {
   y: number; // y_idx (0-39)
 }
 
+export interface CoverageStatsCell extends CoverageCell {
+  physical_visits: number;
+  thermal_scans: number;
+}
+
 export interface ChartDataPoint {
   tick: number;
   coverage: number;
@@ -86,8 +97,15 @@ export interface MissionReport {
   final_coverage: number;
   coverage_percentage: number;
   survivors_found: number;
+  total_survivors?: number;
   discovery_auc: number;
   mean_time_to_discovery: number;
   energy_efficiency: number;
+  physical_cells_unique?: number;
+  thermal_cells_unique?: number;
+  overlap_cells_unique?: number;
+  thermal_overlap_pct?: number;
+  severe_overlap_cells?: number;
+  coverage_stats?: CoverageStatsCell[];
   chart_data: ChartDataPoint[];
 }

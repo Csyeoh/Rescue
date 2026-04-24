@@ -51,6 +51,7 @@ def get_current_map_state() -> dict:
                 "x": agent.pos[0],
                 "y": agent.pos[1],
                 "discovered": agent.found,
+                "found_tick": agent.found_tick,
             })
 
     # Active thermal scans are now isolated to their own API endpoint.

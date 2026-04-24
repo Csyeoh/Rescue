@@ -15,6 +15,7 @@ export default function DeckApp() {
   const [showCoords, setShowCoords] = useState(false);
   const [isNightMode, setIsNightMode] = useState(false);
   const [showXRay, setShowXRay] = useState(false);
+  const [selectedSurvivorId, setSelectedSurvivorId] = useState<string | null>(null);
   
 
   const {
@@ -90,6 +91,7 @@ export default function DeckApp() {
           showCoords={showCoords}
           isNightMode={isNightMode}
           showXRay={showXRay}
+          selectedSurvivorId={selectedSurvivorId}
         />
       </div>
 
@@ -198,6 +200,9 @@ export default function DeckApp() {
         {/* ── Swarm Status Panel (Right Edge) ── */}
         <SwarmStatusPanel
           drones={drones}
+          survivors={environmentState.survivors}
+          selectedSurvivorId={selectedSurvivorId}
+          onSelectSurvivor={setSelectedSurvivorId}
           isConnected={isSimulationRunning}
         />
 

@@ -46,8 +46,10 @@ export function envToSurvivors(env: EnvironmentState): SurvivorPoint[] {
   return (env?.survivors || []).map(s => {
     const z = 0.05;
     return {
+      id: s.id,
       position: [s.x + 0.5, s.y + 0.5, z] as [number, number, number],
       rescued: Boolean(s.isRescued),
+      foundTick: s.foundTick ?? null,
     };
   });
 }

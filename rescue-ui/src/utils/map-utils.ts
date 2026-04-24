@@ -29,10 +29,14 @@ export const initializeEnvironmentState = (map_data: any): EnvironmentState => {
 
   const survivors = map_data?.survivors ?? [];
   for (const s of survivors) {
+    const x = Number(s.x);
+    const y = Number(s.y);
     state.survivors.push({
-      x: Number(s.x),
-      y: Number(s.y),
+      id: String(s.id ?? `survivor_${Math.floor(x)}_${Math.floor(y)}`),
+      x,
+      y,
       isRescued: Boolean(s.discovered),
+      foundTick: s.found_tick !== undefined && s.found_tick !== null ? Number(s.found_tick) : null,
     });
   }
 

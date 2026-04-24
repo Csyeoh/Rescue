@@ -81,6 +81,7 @@ class SurvivorAgent(Agent):
     def __init__(self, unique_id, model):
         super().__init__(unique_id, model)
         self.found = False
+        self.found_tick = None
 
     def step(self): pass
 
@@ -247,7 +248,7 @@ class DisasterZoneModel(Model):
         for agent in self.schedule.agents:
             if isinstance(agent, SurvivorAgent):
                 survivor_data.append(
-                    (agent.unique_id, agent.pos[0], agent.pos[1], int(agent.found))
+                    (agent.unique_id, agent.pos[0], agent.pos[1], int(agent.found), agent.found_tick)
                 )
 
         building_cluster_data = [
@@ -379,19 +380,20 @@ class DisasterZoneModel(Model):
                                 revealed_cells.append((ix, iy))
 
                     if revealed_cells:
-                        db.sync_coverage(revealed_cells)
+                        db.increment_physical_visits(revealed_cells)
 
                     for obj in nearby:
                         if isinstance(obj, BuildingAgent):
                             obj.revealed = True
                             # Force coverage update for building location
-                            db.sync_coverage([(int(obj.pos[0]*2), int(obj.pos[1]*2))])
+                            db.increment_physical_visits([(int(obj.pos[0]*2), int(obj.pos[1]*2))])
                         elif isinstance(obj, ObstacleAgent):
                             obj.discovered = True
                             # Force coverage update for obstacle location
-                            db.sync_coverage([(int(obj.pos[0]*2), int(obj.pos[1]*2))])
+                            db.increment_physical_visits([(int(obj.pos[0]*2), int(obj.pos[1]*2))])
                         elif isinstance(obj, SurvivorAgent) and not obj.found:
                             obj.found = True
+                            obj.found_tick = self.tick_count
                             self.found_survivors += 1
                             self.log_action(d_id, f"Survivor found at {obj.pos}!")
 

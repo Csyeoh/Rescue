@@ -199,7 +199,7 @@ def thermal_scan(drone_id: str, cluster_id: str) -> dict:
                         revealed_cells.append((ix, iy))
     
     if revealed_cells:
-        db.sync_coverage(revealed_cells)
+        db.increment_thermal_scans(revealed_cells)
 
     for sx, sy in survivors:
         dist = math.hypot(cx - sx, cy - sy)
@@ -388,9 +388,15 @@ def declare_survivor(drone_id: str, x: float, y: float) -> dict:
             break
             
     if found_id:
-        cursor.execute("UPDATE survivors SET found=1 WHERE id=?", (found_id,))
-        # Find drone and insert fake log message so simulation knows about the rescue
         import simulation
+        found_tick = simulation.sim_world.tick_count if simulation.sim_world else None
+        cursor.execute("UPDATE survivors SET found=1, found_tick=? WHERE id=?", (found_tick, found_id))
+        if simulation.sim_world:
+            for agent in simulation.sim_world.schedule.agents:
+                if getattr(agent, "unique_id", None) == found_id:
+                    agent.found = True
+                    agent.found_tick = found_tick
+                    break
         if simulation.sim_world:
             simulation.sim_world.found_survivors += 1
             simulation.sim_world.log_action(drone_id, f"Survivor officially declared and rescued near {round(x,1)}, {round(y,1)}!")

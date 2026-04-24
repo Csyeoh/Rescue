@@ -324,11 +324,14 @@ export const useWebSocket = (props: WebSocketHookProps) => {
 
               const newSurvivors = [...prevState.survivors];
               for (const s of survivors) {
+                const id = String(s.id ?? '');
                 const x = Math.floor(Number(s.x));
                 const y = Math.floor(Number(s.y));
-                const idx = newSurvivors.findIndex(surv => surv.x === x && surv.y === y);
-                if (idx >= 0) newSurvivors[idx] = { ...newSurvivors[idx], isRescued: Boolean(s.discovered) };
-                else newSurvivors.push({ x, y, isRescued: Boolean(s.discovered) });
+                const foundTick = s.found_tick !== undefined && s.found_tick !== null ? Number(s.found_tick) : null;
+                const resolvedId = id || `survivor_${x}_${y}`;
+                const idx = newSurvivors.findIndex(surv => surv.id === resolvedId);
+                if (idx >= 0) newSurvivors[idx] = { ...newSurvivors[idx], x, y, isRescued: Boolean(s.discovered), foundTick };
+                else newSurvivors.push({ id: resolvedId, x, y, isRescued: Boolean(s.discovered), foundTick });
               }
               next.survivors = newSurvivors;
 

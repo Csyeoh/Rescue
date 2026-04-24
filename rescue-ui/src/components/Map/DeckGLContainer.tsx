@@ -36,6 +36,7 @@ interface DeckGLContainerProps {
   showCoords: boolean;
   isNightMode: boolean;
   showXRay: boolean;
+  selectedSurvivorId?: string | null;
   }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +116,8 @@ export default function DeckGLContainer({
   mode,
   showCoords,
   isNightMode,
-  showXRay
+  showXRay,
+  selectedSurvivorId = null
 }: DeckGLContainerProps) {
   const [hoveredBuildingId, setHoveredBuildingId] = useState<string | null>(null);
   const [time, setTime] = useState(0);
@@ -150,7 +152,7 @@ export default function DeckGLContainer({
 
       // 1. Transient scans and Survivors
       createThermalLayer(thermalData, time),
-      createSurvivorLayer(survivorData, theme.survivor),
+      createSurvivorLayer(survivorData, theme.survivor, selectedSurvivorId),
 
       // 2. Static environment
       createBuildingLayer(buildingData, hoveredBuildingId, {
@@ -201,7 +203,7 @@ export default function DeckGLContainer({
         outlineColor: [0, 0, 0, 128],
       }),
     ];
-  }, [buildingData, obstacleData, thermalData, survivorData, drones, hoveredBuildingId, time, showCoords,  isNightMode]);
+  }, [buildingData, obstacleData, thermalData, survivorData, drones, hoveredBuildingId, time, showCoords, isNightMode, selectedSurvivorId]);
 
   // ── Lighting Rig ──
   const effect = useMemo(() => createLightingEffect(isNightMode), [isNightMode]);
@@ -277,9 +279,15 @@ export default function DeckGLContainer({
               `;
               break;
             case 'survivors':
-              title = 'Survivor';
+              title = `Survivor: ${object.id ?? ''}`;
               displayX = (object.position[0]).toFixed(2);
               displayY = (object.position[1]).toFixed(2);
+              content = `
+                <div class="flex flex-col gap-1 mt-1">
+                  <div class="flex justify-between gap-4"><span>Status:</span><span class="font-bold text-emerald-500">${object.rescued ? 'Located' : 'Unconfirmed'}</span></div>
+                  <div class="flex justify-between gap-4"><span>Found tick:</span><span class="font-bold text-azure-mid">${object.foundTick ?? '—'}</span></div>
+                </div>
+              `;
               break;
             default:
               return null;
