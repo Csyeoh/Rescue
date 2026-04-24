@@ -336,7 +336,7 @@ class DisasterZoneModel(Model):
                     "status": drone.status,
                 })
 
-                if drone.status in ["SEARCHING", "RETURNING"]:
+                if drone.status in ["SEARCHING", "RETURNING"] and drone.status != "TRIAGE_HOLD":
                     dx = float(intent.get("dx", 0.0))
                     dy = float(intent.get("dy", 0.0))
 

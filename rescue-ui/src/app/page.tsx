@@ -9,6 +9,9 @@ import { LogPanel } from '../components/Layout/LogPanel';
 import { SwarmStatusPanel } from '../components/Layout/SwarmStatusPanel';
 import DeckGLContainer from '../components/Map/DeckGLContainer';
 import { MissionReportModal } from '../components/Report/MissionReportModal'; // Import it
+import SurvivorMic from '../components/UI/SurvivorMic';
+
+
 
 export default function DeckApp() {
 
@@ -42,6 +45,8 @@ export default function DeckApp() {
     logs,
     setLogs,
     addLog,
+    activeTriage,
+    setActiveTriage,
     resetMission,
     generateMapPreview,
     toggleSimulation,
@@ -67,6 +72,7 @@ export default function DeckApp() {
     setRevealedCells,
     setTickCount,
     setMissionReport,
+    setActiveTriage,
     setCoverage,
     addLog,
     discoveredRef,
@@ -195,6 +201,26 @@ export default function DeckApp() {
           </div>
         </div>
 
+        {/* ── Active Triage Panel (Pops up when drone finds survivor) ── */}
+        {activeTriage && (
+          <SurvivorMic 
+            droneId={activeTriage.droneId}
+            survivorId={activeTriage.survivorId}
+            onIntelReceived={(data) => {
+              const intel = data.intel;
+              const details = `Med Needs: ${intel.medical_needs?.join(', ') || 'None'}\nSupplies: ${intel.requested_supplies?.join(', ') || 'None'}`;
+              
+              addLog(
+                'SYSTEM', 
+                `Intel logged for survivor ${activeTriage.survivorId}. Urgency: ${intel.urgency_level}`, 
+                'success', 
+                { type: 'info', details }
+              );
+            }}
+            onResolve={() => setActiveTriage(null)} 
+          />
+        )}
+
         {/* ── Swarm Status Panel (Right Edge) ── */}
         <SwarmStatusPanel
           drones={drones}
@@ -208,12 +234,21 @@ export default function DeckApp() {
             disabled={isGenerating || isSimulationRunning}
             className={`bg-azure-dark hover:bg-azure-mid text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-[0_4px_12px_#164e6366] transition-all border border-azure-pale/20 disabled:opacity-50 flex items-center gap-2`}
           >
+
             {isGenerating ? (
                <>
                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                  Generating...
                </>
             ) : "Compile Map Data"}
+          </button>
+
+          {/* Add this somewhere visible, like next to your 'Compile Map Data' button */}
+          <button 
+            onClick={() => setActiveTriage({ droneId: 'drone_1', survivorId: 's_99' })}
+            className="bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium px-4 py-2.5 rounded-xl absolute bottom-20 left-1/2 -translate-x-1/2 z-50"
+          >
+            [DEBUG] Force Triage Panel
           </button>
         </div>
       </motion.div>

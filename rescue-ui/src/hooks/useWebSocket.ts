@@ -17,6 +17,7 @@ interface WebSocketHookProps {
   setMissionReport: (report: any | null) => void;
   setCoverage: (val: {x: number, y: number}[] | ((prev: {x: number, y: number}[]) => {x: number, y: number}[])) => void;
   addLog: (agent: string, message: string, type?: LogEntry['type'], details?: LogEntry['details'], tick?: number) => void;
+  setActiveTriage: React.Dispatch<React.SetStateAction<{droneId: string, survivorId: string} | null>>;
   discoveredRef: React.MutableRefObject<Set<string>>;
   seenLogsRef: React.MutableRefObject<Set<string>>;
 }
@@ -155,6 +156,19 @@ export const useWebSocket = (props: WebSocketHookProps) => {
               type: 'tool_call',
               tool_name: payload.tool_name,
               tool_args: args,
+            });
+            return;
+          }
+
+          // ── Triage Intercept ────────────────────────────────────────────────
+          if (msg.type === 'survivor_contact_established') {
+            const payload = msg.payload ?? {};
+            addLog('SYSTEM', `Contact established by ${payload.drone_id}. Initiating TRIAGE HOLD.`, 'warning');
+            
+            // Pop open the mic panel automatically
+            propsRef.current.setActiveTriage({
+                droneId: payload.drone_id,
+                survivorId: String(payload.survivor_id)
             });
             return;
           }

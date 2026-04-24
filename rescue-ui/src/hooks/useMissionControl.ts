@@ -22,6 +22,7 @@ export const useMissionControl = () => {
   const [coverage, setCoverage] = useState<{x: number, y: number}[]>([]);
   const [drones, setDrones] = useState<DroneStatus[]>([]);
   const [missionReport, setMissionReport] = useState<MissionReport | null>(null);
+  const [activeTriage, setActiveTriage] = useState<{droneId: string, survivorId: string} | null>(null);
   const [environmentState, setEnvironmentState] = useState<EnvironmentState>({
     buildings: [],
     obstacles: [],
@@ -49,6 +50,7 @@ export const useMissionControl = () => {
   }, []);
 
   const resetMission = useCallback(async (newConfig = config) => {
+    setActiveTriage(null);
     try {
       await resetMissionApi();
     } catch (e) {
@@ -220,6 +222,8 @@ export const useMissionControl = () => {
     toggleSimulation,
     downloadLogsAsText,
     discoveredRef,
-    seenLogsRef
+    seenLogsRef,
+    activeTriage,
+    setActiveTriage
   };
 };

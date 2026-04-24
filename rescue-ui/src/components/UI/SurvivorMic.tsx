@@ -11,7 +11,17 @@ const LANGUAGES = [
     { label: 'Thai', code: 'th-TH' }
 ];
 
-export default function SurvivorMic({ survivorId, onIntelReceived }: { survivorId: number, onIntelReceived: (intel: any) => void }) {
+export default function SurvivorMic({ 
+    droneId,
+    survivorId, 
+    onIntelReceived,
+    onResolve 
+}: { 
+    droneId: string,
+    survivorId: string | number, 
+    onIntelReceived: (intel: any) => void,
+    onResolve: () => void
+}) {
     const [isRecording, setIsRecording] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [transcript, setTranscript] = useState('');
@@ -80,6 +90,21 @@ export default function SurvivorMic({ survivorId, onIntelReceived }: { survivorI
         sendData();
     }, [transcript, survivorId]);
 
+    const resolveTriage = async (resolution: string) => {
+        try {
+            await fetch(`http://localhost:8000/api/triage/resolve`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ drone_id: droneId, survivor_id: String(survivorId), resolution }),
+            });
+        } catch (err) {
+            console.error("❌ Failed to release drone (Backend might be offline):", err);
+        } finally {
+            // ALWAYS close the panel in the UI, whether the backend succeeds or fails
+            onResolve(); 
+        }
+    };
+
     const startRecording = () => {
         if (recognitionRef.current) {
             try {
@@ -100,7 +125,7 @@ export default function SurvivorMic({ survivorId, onIntelReceived }: { survivorI
     };
 
     return (
-        <div className="absolute bottom-4 right-4 flex flex-col items-center p-3 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-xl shadow-2xl z-50">
+        <div className="absolute bottom-4 right-4 flex flex-col items-center p-3 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-xl shadow-2xl z-50 pointer-events-auto">
             {/* Language Selector Dropdown */}
             <select 
                 value={selectedLang}
@@ -129,6 +154,22 @@ export default function SurvivorMic({ survivorId, onIntelReceived }: { survivorI
                     isRecording ? <Square size={28} className="text-white" fill="currentColor" /> :
                         <Mic size={28} className="text-white" />}
             </button>
+
+            {/* Resolution Controls */}
+            <div className="flex gap-2 mt-4 w-full justify-center">
+                <button 
+                    onClick={() => resolveTriage('Medivac Required')} 
+                    className="px-3 py-1.5 text-[10px] bg-red-600/80 hover:bg-red-500 rounded text-white font-bold tracking-wider uppercase transition-colors"
+                >
+                    Medivac
+                </button>
+                <button 
+                    onClick={() => resolveTriage('Safe')} 
+                    className="px-3 py-1.5 text-[10px] bg-emerald-600/80 hover:bg-emerald-500 rounded text-white font-bold tracking-wider uppercase transition-colors"
+                >
+                    Safe / Clear
+                </button>
+            </div>
         </div>
     );
 }

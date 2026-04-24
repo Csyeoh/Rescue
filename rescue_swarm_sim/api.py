@@ -122,7 +122,7 @@ class VoiceIntelRequest(BaseModel):
     transcript: str
 
 @app.post("/api/survivors/{survivor_id}/voice-intel")
-async def process_survivor_voice(survivor_id: int, payload: VoiceIntelRequest):
+async def process_survivor_voice(survivor_id: str, payload: VoiceIntelRequest):
     """Receives transcript, translates if necessary, and extracts structured data."""
     transcript = payload.transcript
     
@@ -194,6 +194,32 @@ async def process_survivor_voice(survivor_id: int, payload: VoiceIntelRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+class TriageResolveRequest(BaseModel):
+    drone_id: str
+    survivor_id: str
+    resolution: str  # e.g., "medivac", "safe", "false_alarm"
+
+@app.post("/api/triage/resolve")
+def resolve_triage(payload: TriageResolveRequest):
+    import db
+    conn = db.get_db_conn()
+    cursor = conn.cursor()
+    
+    # 1. Release the drone back to the swarm
+    cursor.execute("UPDATE drones SET status='SEARCHING' WHERE id=?", (payload.drone_id,))
+    
+    # 2. Log the resolution to the mission log
+    import simulation
+    if simulation.sim_world:
+        simulation.sim_world.log_action(
+            payload.drone_id, 
+            f"Triage resolved by Operator ({payload.resolution}). Resuming search."
+        )
+        
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": f"Drone {payload.drone_id} released."}
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
