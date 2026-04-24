@@ -338,7 +338,6 @@ export const useWebSocket = (props: WebSocketHookProps) => {
               const rescued = next.survivors.filter(c => c.isRescued).length;
               setSurvivorsFound(rescued);
               setSurvivorsDetected(rescued);
-              setRevealedCells(discoveredRef.current.size);
               return next;
             });
 

@@ -24,8 +24,9 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleSimulation,
   tickCount
 }) => {
-  const discoveryPercent = Math.min(100, Math.floor((revealedCells / (GRID_SIZE * GRID_SIZE)) * 100));
-  const detectedPercent = (survivorsDetected / totalSurvivors) * 100;
+  const maxCoverageCells = (GRID_SIZE * 2) * (GRID_SIZE * 2);
+  const discoveryPercent = Math.min(100, Math.floor((revealedCells / maxCoverageCells) * 100));
+  const detectedPercent = totalSurvivors > 0 ? (survivorsDetected / totalSurvivors) * 100 : 0;
 
   return (
     <header className="flex items-center justify-between bg-white/90 backdrop-blur-md px-6 py-3 rounded-2xl shadow-sm border border-azure-pale/50 shrink-0 mx-1">
