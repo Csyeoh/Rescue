@@ -62,7 +62,7 @@ def get_drone_context(drone_id: str) -> dict:
     Returns live telemetry and immediate visual surroundings for a drone:
     - pos: current continuous-space position {x, y}
     - battery: remaining battery %
-    - status: SEARCHING | RETURNING | IDLE | CRASHED
+    - status: SEARCHING | RETURNING | IDLE | CRASHED | TRIAGE_HOLD
     - task_queue: contains {"task": string, "status": pending|completed, "feedback": []}
     - surroundings: list of entities within a 1.0 unit optical radius
     Base station is at (9.5, 9.5).

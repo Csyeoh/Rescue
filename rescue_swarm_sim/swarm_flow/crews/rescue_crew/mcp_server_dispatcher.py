@@ -110,11 +110,21 @@ def assign_drone_task(drone_id: str, task: str, status: str) -> dict:
 
     conn = db.get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT task_queue FROM drones WHERE id=?", (drone_id,))
+    
+    # MODIFIED: Fetch 'status' alongside 'task_queue'
+    cursor.execute("SELECT task_queue, status FROM drones WHERE id=?", (drone_id,))
     row = cursor.fetchone()
     if not row:
         conn.close()
         return {"error": "Drone not found"}
+        
+    current_status = row[1]
+    
+    # --- NEW SAFEGUARD ---
+    if current_status == "TRIAGE_HOLD":
+        conn.close()
+        return {"error": f"CRITICAL: Cannot assign task. {drone_id} is in TRIAGE_HOLD (Human Operator Control)."}
+    # ---------------------
         
     tasks = json.loads(row[0]) if row[0] else []
     
@@ -137,11 +147,21 @@ def set_task_complete(drone_id: str) -> dict:
     """
     conn = db.get_db_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT task_queue FROM drones WHERE id=?", (drone_id,))
+    
+    # MODIFIED: Fetch 'status' alongside 'task_queue'
+    cursor.execute("SELECT task_queue, status FROM drones WHERE id=?", (drone_id,))
     row = cursor.fetchone()
     if not row:
         conn.close()
         return {"error": "Drone not found"}
+        
+    current_status = row[1]
+    
+    # --- NEW SAFEGUARD ---
+    if current_status == "TRIAGE_HOLD":
+        conn.close()
+        return {"error": f"CRITICAL: Cannot complete task. {drone_id} is in TRIAGE_HOLD (Human Operator Control)."}
+    # ---------------------
         
     tasks = json.loads(row[0]) if row[0] else []
     found = False

@@ -6,6 +6,7 @@ import db
 from mesa import Agent, Model
 from mesa.space import ContinuousSpace
 from mesa.time import RandomActivation
+import websocket_manager
 
 def cluster_tiles(tiles):
     """
@@ -393,7 +394,18 @@ class DisasterZoneModel(Model):
                         elif isinstance(obj, SurvivorAgent) and not obj.found:
                             obj.found = True
                             self.found_survivors += 1
-                            self.log_action(d_id, f"Survivor found at {obj.pos}!")
+
+                            # 1. Put Drone in Triage Hold
+                            drone.status = "TRIAGE_HOLD"
+                            self.log_action(d_id, f"Survivor found at {obj.pos}! Initiating TRIAGE_HOLD.")
+
+                            # 2. Fire WebSocket Event to Frontend
+                            websocket_manager.send_to_ui("survivor_contact_established", {
+                                "drone_id": d_id,
+                                "survivor_id": obj.unique_id,
+                                "x": round(obj.pos[0], 2),
+                                "y": round(obj.pos[1], 2)
+                            })
 
         # 4. Mesa schedule step (battery drain / charge)
         self.schedule.step()
