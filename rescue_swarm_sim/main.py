@@ -40,8 +40,12 @@ def start_services():
     except KeyboardInterrupt:
         print("\n>> Shutting down Swarm Control Nexus...")
         for p in processes:
-            p.terminate()  # Kills the background servers cleanly
-            p.wait()       # Waits for them to fully close before exiting
+            if os.name == "nt":
+                # Forcefully kill the process and all its children (/T /F)
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True)
+            else:
+                p.terminate()
+                p.wait()
         print("System offline. Goodbye!")
         sys.exit(0)
 
